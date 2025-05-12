@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户登录 - 智能客服系统</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .auth-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .auth-form {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .auth-btn {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .auth-btn:hover {
+            background-color: #45a049;
+        }
+        .auth-links {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .error-message {
+            color: red;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .success-message {
+            color: green;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .test-users {
+            margin-top: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+<div class="auth-container">
+    <h2 style="text-align: center;">用户登录</h2>
+    
+    <!-- 错误/成功信息显示区域 -->
+    <div id="errorMessage" class="error-message" style="display: none;"></div>
+    <div id="successMessage" class="success-message" style="display: none;"></div>
+    
+    <!-- 登录表单 - 使用传统表单提交 -->
+    <form class="auth-form" id="loginForm" method="post" action="/api/auth/login">
+        <div class="form-group">
+            <label for="username">用户名</label>
+            <input type="text" id="username" name="username" required>
+        </div>
+        <div class="form-group">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <button type="submit" class="auth-btn">登录</button>
+    </form>
+    
+    <div class="auth-links">
+        <p>还没有账号？<a href="register.html">立即注册</a></p>
+    </div>
+    
+    <div class="test-users">
+        <p>测试账号: admin/admin123 (管理员) 或 user/user123 (普通用户)</p>
+    </div>
+</div>
+
+<script>
+// 页面加载时检查URL参数
+document.addEventListener('DOMContentLoaded', function() {
+    // 获取URL中的参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const error = urlParams.get('error');
+    const logout = urlParams.get('logout');
+    
+    // 处理错误参数
+    if (error) {
+        const errorMessage = document.getElementById('errorMessage');
+        errorMessage.textContent = '登录失败，用户名或密码错误';
+        errorMessage.style.display = 'block';
+    }
+    
+    // 处理登出参数
+    if (logout) {
+        const successMessage = document.getElementById('successMessage');
+        successMessage.textContent = '您已成功登出系统';
+        successMessage.style.display = 'block';
+    }
+});
+</script>
+</body>
+</html> 

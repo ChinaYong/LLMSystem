@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户注册 - 智能客服系统</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .auth-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .auth-form {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .auth-btn {
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .auth-btn:hover {
+            background-color: #45a049;
+        }
+        .auth-links {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .error-message {
+            color: red;
+            margin-top: 10px;
+            text-align: center;
+            display: none;
+        }
+        .success-message {
+            color: green;
+            margin-top: 10px;
+            text-align: center;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div class="auth-container">
+    <h2 style="text-align: center;">用户注册</h2>
+    <div id="errorMessage" class="error-message"></div>
+    <div id="successMessage" class="success-message"></div>
+    <form class="auth-form" id="registerForm">
+        <div class="form-group">
+            <label for="username">用户名</label>
+            <input type="text" id="username" name="username" required>
+        </div>
+        <div class="form-group">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <div class="form-group">
+            <label for="confirmPassword">确认密码</label>
+            <input type="password" id="confirmPassword" name="confirmPassword" required>
+        </div>
+        <div class="form-group">
+            <label for="email">邮箱（可选）</label>
+            <input type="email" id="email" name="email">
+        </div>
+        <div class="form-group">
+            <label for="fullName">姓名（可选）</label>
+            <input type="text" id="fullName" name="fullName">
+        </div>
+        <div class="form-group">
+            <label for="role">角色</label>
+            <select id="role" name="role">
+                <option value="ROLE_USER">普通用户</option>
+                <option value="ROLE_ADMIN">管理员</option>
+            </select>
+        </div>
+        <button type="submit" class="auth-btn">注册</button>
+    </form>
+    <div class="auth-links">
+        <p>已有账号？<a href="login.html">立即登录</a></p>
+    </div>
+</div>
+
+<script>
+document.getElementById('registerForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const email = document.getElementById('email').value;
+    const fullName = document.getElementById('fullName').value;
+    const role = document.getElementById('role').value;
+    
+    // 表单验证
+    const errorMessage = document.getElementById('errorMessage');
+    const successMessage = document.getElementById('successMessage');
+    
+    // 隐藏之前的消息
+    errorMessage.style.display = 'none';
+    successMessage.style.display = 'none';
+    
+    // 密码验证
+    if (password !== confirmPassword) {
+        errorMessage.textContent = '两次输入的密码不一致';
+        errorMessage.style.display = 'block';
+        return;
+    }
+    
+    // 构建注册数据
+    const registerData = {
+        username: username,
+        password: password,
+        email: email || null,  // 如果为空字符串，则设为null
+        fullName: fullName || null,
+        role: role
+    };
+    
+    // 发送注册请求
+    fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(registerData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 注册成功
+            successMessage.textContent = '注册成功！即将跳转到登录页面...';
+            successMessage.style.display = 'block';
+            
+            // 清空表单
+            document.getElementById('registerForm').reset();
+            
+            // 3秒后跳转到登录页面
+            setTimeout(() => {
+                window.location.href = 'login.html';
+            }, 3000);
+        } else {
+            // 显示错误信息
+            errorMessage.textContent = data.message || '注册失败，请稍后再试';
+            errorMessage.style.display = 'block';
+        }
+    })
+    .catch(error => {
+        console.error('注册请求出错:', error);
+        errorMessage.textContent = '注册请求出错，请稍后再试';
+        errorMessage.style.display = 'block';
+    });
+});
+</script>
+</body>
+</html> 

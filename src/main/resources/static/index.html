@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能客服系统</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .user-info {
+            display: flex;
+            align-items: center;
+            margin-left: auto;
+        }
+        .user-info span {
+            margin-right: 10px;
+        }
+        .logout-btn {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .logout-btn:hover {
+            background-color: #d32f2f;
+        }
+        .login-btn {
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            margin-left: auto;
+        }
+        .login-btn:hover {
+            background-color: #45a049;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            background-color: #f8f8f8;
+            border-bottom: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>智能客服系统</h1>
+        <div id="userSection" class="user-info" style="display: none;">
+            <span>欢迎，<strong id="username"></strong></span>
+            <span id="userRole"></span>
+            <button id="logoutBtn" class="logout-btn">退出登录</button>
+        </div>
+        <a href="login.html" id="loginBtn" class="login-btn">登录</a>
+    </header>
+
+    <main>
+        <div class="chat-section">
+            <div class="chat-container" id="chatContainer">
+                <!-- 聊天消息将在这里动态显示 -->
+                <div class="system-message">
+                    您好，我是智能客服助手，有什么可以帮您解答的问题吗？
+                </div>
+            </div>
+
+            <div class="input-container">
+                <textarea id="userInput" placeholder="请输入您的问题..." rows="2"></textarea>
+                <button id="sendBtn">发送</button>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="upload-section">
+                <h3>上传知识库文件</h3>
+                <form id="uploadForm">
+                    <input type="file" id="fileInput" accept=".txt,.pdf,.docx,.doc">
+                    <button type="submit" id="uploadBtn">上传文件</button>
+                </form>
+                <div id="uploadStatus"></div>
+            </div>
+
+            <div class="file-list-section">
+                <h3>已上传文件</h3>
+                <ul id="fileList">
+                    <!-- 已上传的文件将在这里显示 -->
+                </ul>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+// 用户登录状态管理
+document.addEventListener('DOMContentLoaded', function() {
+    const userSection = document.getElementById('userSection');
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const usernameElement = document.getElementById('username');
+    const userRoleElement = document.getElementById('userRole');
+    
+    // 先检查会话状态，从服务器获取当前登录用户
+    checkAuthStatus();
+    
+    // 登出按钮点击事件
+    logoutBtn.addEventListener('click', function() {
+        // 创建一个表单提交登出请求
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/auth/logout';
+        document.body.appendChild(form);
+        form.submit();
+    });
+    
+    // 检查认证状态
+    function checkAuthStatus() {
+        fetch('/api/auth/current')
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        // 未登录，显示登录按钮
+                        userSection.style.display = 'none';
+                        loginBtn.style.display = 'block';
+                        
+                        // 清除本地存储
+                        localStorage.removeItem('user');
+                        
+                        console.log('用户未登录');
+                        return;
+                    }
+                    throw new Error('获取用户信息失败');
+                }
+                return response.json();
+            })
+            .then(user => {
+                if (user) {
+                    console.log('用户已登录:', user);
+                    
+                    // 保存用户信息到localStorage
+                    localStorage.setItem('user', JSON.stringify({
+                        userId: user.id,
+                        username: user.username,
+                        role: user.role
+                    }));
+                    
+                    // 显示用户信息
+                    userSection.style.display = 'flex';
+                    loginBtn.style.display = 'none';
+                    usernameElement.textContent = user.username;
+                    
+                    // 显示用户角色
+                    let roleText = '普通用户';
+                    if (user.role === 'ROLE_ADMIN') {
+                        roleText = '管理员';
+                    }
+                    userRoleElement.textContent = `(${roleText})`;
+                }
+            })
+            .catch(error => {
+                console.error('检查认证状态失败:', error);
+                // 显示登录按钮
+                userSection.style.display = 'none';
+                loginBtn.style.display = 'block';
+            });
+    }
+});
+</script>
+</body>
+</html>

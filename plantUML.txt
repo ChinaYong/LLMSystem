@@ -1,0 +1,82 @@
+@startuml
+' ===== 视觉设置 =====
+skinparam monochrome true
+skinparam componentStyle rectangle
+!theme plain
+
+actor User
+
+package "Browser Frontend" <<Boundary>> {
+  component FrontUI as "index.html / app.js"
+}
+
+package "Spring Boot Backend" <<Node>> {
+
+  package "Controller Layer" <<Framework>> {
+    component ChatBotController
+    component KnowledgeController
+    component ChatController
+    component UserController
+    component ConfigController
+  }
+
+  package "Service Layer" <<Framework>> {
+    component ChatService
+    component KnowledgeService
+    component IntentRecognitionService
+    component EmbeddingService
+    component LLMService
+    component UserService
+  }
+
+  package "Repository Layer" <<Framework>> {
+    component ChatRepository
+    component DocumentRepository
+    component SegmentRepository
+    component UserRepository
+  }
+
+  database MySQL
+  component PromptProperties
+}
+
+cloud "LLM Engine\n(DJL / Remote API)" as LLMEngine
+cloud "Embedding Engine\n(Ollama / DJL)" as EmbedEngine
+folder "Knowledge Files" as FileStorage
+
+' ======= 主要交互 =======
+User           --> FrontUI                 : 提问 / 上传文件
+FrontUI        --> ChatBotController       : REST JSON
+ChatBotController -> ChatService           : getAnswer()
+
+ChatService    -> IntentRecognitionService : recognizeIntent()
+IntentRecognitionService -> LLMService     : 分类提示
+LLMService     <-> LLMEngine               : prompt / response
+
+ChatService    -> EmbeddingService         : findSegments()
+EmbeddingService <-> EmbedEngine           : /embeddings
+EmbeddingService <-> SegmentRepository     : CRUD vector
+SegmentRepository <-> MySQL
+
+ChatService    <-> ChatRepository
+ChatRepository <-> MySQL
+ChatService    --> ChatBotController       : answer
+ChatBotController --> FrontUI              : JSON 回复
+
+' ------- 知识上传流程 -------
+FrontUI        --> KnowledgeController     : 上传文件
+KnowledgeController -> KnowledgeService    : save + index()
+KnowledgeService -> DocumentRepository
+DocumentRepository <-> MySQL
+KnowledgeService -> FileStorage
+KnowledgeService -> EmbeddingService       : indexSegment()
+
+' ------- 用户管理 / 配置 -------
+FrontUI        --> UserController
+UserController <-> UserService
+UserService    <-> UserRepository
+UserRepository <-> MySQL
+
+FrontUI        --> ConfigController
+ConfigController -> PromptProperties
+@enduml
