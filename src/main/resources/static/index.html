@@ -73,6 +73,17 @@
         </div>
 
         <div class="sidebar">
+            <div class="history-section">
+                <h3>历史对话</h3>
+                <div id="historyStatus">请登录后查看历史对话</div>
+                <div id="sessionList" style="display: none;">
+                    <!-- 历史会话列表将在这里显示 -->
+                </div>
+                <div id="chatHistory" style="display: none;">
+                    <!-- 选中会话的历史对话将在这里显示 -->
+                </div>
+            </div>
+            
             <div class="upload-section">
                 <h3>上传知识库文件</h3>
                 <form id="uploadForm">
@@ -157,6 +168,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         roleText = '管理员';
                     }
                     userRoleElement.textContent = `(${roleText})`;
+                    
+                    // 加载用户的历史对话
+                    // 使用事件触发方式通知app.js加载历史对话
+                    const historyLoadEvent = new CustomEvent('userLoggedIn');
+                    document.dispatchEvent(historyLoadEvent);
                 }
             })
             .catch(error => {
@@ -168,5 +184,67 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
+<style>
+/* 历史对话区域样式 */
+.history-section {
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 10px;
+    background-color: #f9f9f9;
+}
+
+.history-section h3 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+}
+
+#historyStatus {
+    color: #666;
+    font-style: italic;
+    padding: 10px 0;
+}
+
+.session-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.session-item {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.session-item:hover {
+    background-color: #e9e9e9;
+}
+
+.history-list {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0;
+}
+
+.history-question {
+    background-color: #e6f7ff;
+    padding: 8px;
+    border-radius: 5px;
+    margin-bottom: 5px;
+}
+
+.history-answer {
+    background-color: #f0f0f0;
+    padding: 8px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+</style>
 </body>
 </html>

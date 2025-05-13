@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 
 /**
  * 用户实体，对应数据库中的 users 表
+ * 简化后只保留账号、密码、角色和sessionID字段
  */
 @Setter
 @Getter
@@ -33,33 +34,14 @@ public class User {
     @Column(nullable = false)
     private String password;
     
-    // 用户邮箱
-    @Column(unique = true)
-    private String email;
-    
-    // 用户真实姓名
-    private String fullName;
-    
     // 用户角色：ROLE_USER, ROLE_ADMIN 等
     private String role = "ROLE_USER";
     
-    // 账号是否启用
-    private boolean enabled = true;
-    
-    // 账号是否未过期
-    private boolean accountNonExpired = true;
-    
-    // 账号是否未锁定
-    private boolean accountNonLocked = true;
-    
-    // 凭证是否未过期
-    private boolean credentialsNonExpired = true;
+    // 会话ID，用于区分不同的对话
+    private String sessionId;
     
     // 用户创建时间
     private LocalDateTime createdAt;
-    
-    // 最后登录时间
-    private LocalDateTime lastLoginAt;
 
     // ----------- 以下为 getter 和 setter 方法 -----------
 
@@ -69,10 +51,9 @@ public class User {
     }
     
     // 创建用户的构造函数
-    public User(String username, String password, String email) {
+    public User(String username, String password) {
         this.username = username;
         this.password = password;
-        this.email = email;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -82,8 +63,8 @@ public class User {
         return "User{" +
                 "id=" + id +
                 ", username='" + username + '\'' +
-                ", email='" + email + '\'' +
                 ", role='" + role + '\'' +
+                ", sessionId='" + sessionId + '\'' +
                 '}';
     }
 }

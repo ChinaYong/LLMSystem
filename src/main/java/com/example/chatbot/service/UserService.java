@@ -64,11 +64,9 @@ public class UserService {
                     if (updated.getUsername() != null) {
                         existing.setUsername(updated.getUsername());
                     }
-                    if (updated.getEmail() != null) {
-                        existing.setEmail(updated.getEmail());
-                    }
-                    if (updated.getFullName() != null) {
-                        existing.setFullName(updated.getFullName());
+                    // 更新角色（如果提供）
+                    if (updated.getRole() != null) {
+                        existing.setRole(updated.getRole());
                     }
                     // 不更新密码，密码更新有专门的方法
                     return userRepository.save(existing);
@@ -106,7 +104,10 @@ public class UserService {
      */
     public void updateLastLoginTime(Long userId) {
         userRepository.findById(userId).ifPresent(user -> {
-            user.setLastLoginAt(LocalDateTime.now());
+            // 更新会话ID（如果为空）
+            if (user.getSessionId() == null) {
+                user.setSessionId("session-" + user.getUsername() + "-" + System.currentTimeMillis());
+            }
             userRepository.save(user);
         });
     }

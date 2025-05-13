@@ -43,11 +43,7 @@ public class UserAuthService implements UserDetailsService {
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPassword())
-                .authorities(Collections.singletonList(new SimpleGrantedAuthority(user.getRole())))
-                .accountExpired(!user.isAccountNonExpired())
-                .accountLocked(!user.isAccountNonLocked())
-                .credentialsExpired(!user.isCredentialsNonExpired())
-                .disabled(!user.isEnabled())
+                .roles(user.getRole().replace("ROLE_", ""))
                 .build();
     }
 
@@ -84,8 +80,10 @@ public class UserAuthService implements UserDetailsService {
     public Optional<User> login(String username, String password) {
         User user = userRepository.findByUsername(username);
         if (user != null && passwordEncoder.matches(password, user.getPassword())) {
-            // 更新最后登录时间
-            user.setLastLoginAt(LocalDateTime.now());
+            // 更新会话ID（如果为空）
+        if (user.getSessionId() == null) {
+            user.setSessionId("session-" + user.getUsername() + "-" + System.currentTimeMillis());
+        }
             userRepository.save(user);
             return Optional.of(user);
         }

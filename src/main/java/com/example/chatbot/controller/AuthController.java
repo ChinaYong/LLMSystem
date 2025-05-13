@@ -88,13 +88,13 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
             }
             
-            // 记录用户状态
-            logger.info("用户状态检查 - 用户名: " + username + 
-                       ", 启用状态: " + existingUser.isEnabled() + 
-                       ", 账户未过期: " + existingUser.isAccountNonExpired() + 
-                       ", 账户未锁定: " + existingUser.isAccountNonLocked() + 
-                       ", 凭证未过期: " + existingUser.isCredentialsNonExpired() + 
-                       ", 角色: " + existingUser.getRole());
+            // 输出用户状态信息
+        logger.info("用户 " + username + " 登录成功，状态信息: " +
+                "ID: " + existingUser.getId() +
+                ", 用户名: " + existingUser.getUsername() +
+                ", 角色: " + existingUser.getRole() +
+                ", 会话ID: " + existingUser.getSessionId() +
+                ", 创建时间: " + existingUser.getCreatedAt());
 
             // 使用Spring Security进行认证
             logger.info("开始认证用户: " + username);
@@ -164,11 +164,10 @@ public class AuthController {
         
         if (user != null) {
             Map<String, Object> response = new HashMap<>();
-            response.put("id", user.getId());
-            response.put("username", user.getUsername());
-            response.put("email", user.getEmail());
-            response.put("fullName", user.getFullName());
-            response.put("role", user.getRole());
+        response.put("id", user.getId());
+        response.put("username", user.getUsername());
+        response.put("sessionId", user.getSessionId());
+        response.put("role", user.getRole());
             logger.info("当前用户信息获取成功: " + username);
             return ResponseEntity.ok(response);
         } else {
@@ -249,10 +248,10 @@ public class AuthController {
             if (adminUser != null) {
                 response.put("admin_exists", true);
                 response.put("admin_password_hash", adminUser.getPassword());
-                response.put("admin_enabled", adminUser.isEnabled());
-                response.put("admin_account_non_expired", adminUser.isAccountNonExpired());
-                response.put("admin_account_non_locked", adminUser.isAccountNonLocked());
-                response.put("admin_credentials_non_expired", adminUser.isCredentialsNonExpired());
+//                response.put("admin_enabled", adminUser.isEnabled());
+//                response.put("admin_account_non_expired", adminUser.isAccountNonExpired());
+//                response.put("admin_account_non_locked", adminUser.isAccountNonLocked());
+//                response.put("admin_credentials_non_expired", adminUser.isCredentialsNonExpired());
                 
                 // 测试明文密码与哈希值匹配
                 boolean adminPasswordMatches = userService.login("admin", "admin123").isPresent();
@@ -266,10 +265,10 @@ public class AuthController {
             if (normalUser != null) {
                 response.put("user_exists", true);
                 response.put("user_password_hash", normalUser.getPassword());
-                response.put("user_enabled", normalUser.isEnabled());
-                response.put("user_account_non_expired", normalUser.isAccountNonExpired());
-                response.put("user_account_non_locked", normalUser.isAccountNonLocked());
-                response.put("user_credentials_non_expired", normalUser.isCredentialsNonExpired());
+//                response.put("user_enabled", normalUser.isEnabled());
+//                response.put("user_account_non_expired", normalUser.isAccountNonExpired());
+//                response.put("user_account_non_locked", normalUser.isAccountNonLocked());
+//                response.put("user_credentials_non_expired", normalUser.isCredentialsNonExpired());
                 
                 // 测试明文密码与哈希值匹配
                 boolean userPasswordMatches = userService.login("user", "user123").isPresent();

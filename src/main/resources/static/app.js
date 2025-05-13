@@ -10,6 +10,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const uploadBtn = document.getElementById('uploadBtn');         // 上传按钮
     const uploadStatus = document.getElementById('uploadStatus');   // 上传状态显示区域
     const fileList = document.getElementById('fileList');           // 文件列表显示区域
+    const historyStatus = document.getElementById('historyStatus'); // 历史对话状态显示区域
+    const sessionList = document.getElementById('sessionList');     // 会话列表显示区域
+    const chatHistory = document.getElementById('chatHistory');     // 历史对话显示区域
+    
+    // 添加用户登录事件监听器，当用户登录成功时加载历史对话
+    document.addEventListener('userLoggedIn', function() {
+        console.log('用户登录事件触发，正在加载历史对话...');
+        checkAuthStatusAndLoadHistory();
+    });
 
     // 维护会话ID，用于保持对话上下文
     let sessionId = localStorage.getItem('chatSessionId');
@@ -21,7 +30,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 页面加载时，调用函数加载已上传的知识库文件列表
     loadFileList();
-
+    
+    // 检查用户登录状态，如果已登录则加载历史对话
+    checkAuthStatusAndLoadHistory();
+    
     // 不再强制检查登录状态
     // checkUserLoginStatus();
 
@@ -46,6 +58,132 @@ document.addEventListener('DOMContentLoaded', function() {
     function checkUserLoginStatus() {
         const userJson = localStorage.getItem('user');
         return userJson !== null;
+    }
+    
+    // 检查用户认证状态并加载历史对话
+    function checkAuthStatusAndLoadHistory() {
+        const userJson = localStorage.getItem('user');
+        if (userJson) {
+            // 用户已登录，显示历史对话区域
+            historyStatus.style.display = 'none';
+            sessionList.style.display = 'block';
+            
+            // 获取用户信息
+            const user = JSON.parse(userJson);
+            // 加载用户的历史对话
+            loadUserChatHistory(user.userId);
+        } else {
+            // 用户未登录，显示提示信息
+            historyStatus.textContent = '请登录后查看历史对话';
+            historyStatus.style.display = 'block';
+            sessionList.style.display = 'none';
+            chatHistory.style.display = 'none';
+        }
+    }
+    
+    // 加载用户的历史对话
+    function loadUserChatHistory(userId) {
+        // 使用fetch API调用后端获取用户历史对话接口
+        fetch(`/api/chats/user/${userId}/history`, {
+            headers: getRequestHeaders()  // 使用带有用户认证信息的请求头
+        })
+        .then(response => {
+            // 检查HTTP响应状态
+            if (response.status === 401) {
+                // 未授权，显示提示信息
+                throw new Error('登录已过期，请重新登录');
+            }
+            if (!response.ok) {
+                throw new Error('获取历史对话失败');  // 如果状态不是成功，抛出错误
+            }
+            return response.json();  // 将响应解析为JSON
+        })
+        .then(data => {
+            // 清空当前会话列表
+            sessionList.innerHTML = '';
+            
+            // 检查历史对话是否为空
+            if (Object.keys(data).length === 0) {
+                // 如果为空，显示"暂无历史对话"
+                historyStatus.textContent = '暂无历史对话';
+                historyStatus.style.display = 'block';
+                sessionList.style.display = 'none';
+            } else {
+                // 如果不为空，遍历会话列表并显示每个会话
+                historyStatus.style.display = 'none';
+                sessionList.style.display = 'block';
+                
+                // 创建会话列表
+                const sessionListElement = document.createElement('ul');
+                sessionListElement.className = 'session-list';
+                
+                // 遍历每个会话
+                Object.entries(data).forEach(([sessionId, chats]) => {
+                    if (chats.length > 0) {
+                        const sessionItem = document.createElement('li');
+                        sessionItem.className = 'session-item';
+                        
+                        // 使用第一条消息的时间作为会话时间
+                        const sessionTime = new Date(chats[0].createdAt);
+                        const formattedTime = formatDate(sessionTime);
+                        
+                        // 使用第一条消息的问题作为会话标题
+                        const sessionTitle = chats[0].question.length > 20 ? 
+                            chats[0].question.substring(0, 20) + '...' : 
+                            chats[0].question;
+                        
+                        sessionItem.textContent = `${formattedTime}: ${sessionTitle}`;
+                        
+                        // 添加点击事件，显示该会话的详细对话
+                        sessionItem.addEventListener('click', function() {
+                            displaySessionChats(chats);
+                        });
+                        
+                        sessionListElement.appendChild(sessionItem);
+                    }
+                });
+                
+                // 将会话列表添加到页面
+                sessionList.appendChild(sessionListElement);
+            }
+        })
+        .catch(error => {
+            // 捕获并处理任何错误
+            console.error('获取历史对话失败:', error);  // 在控制台记录错误
+            // 显示错误消息
+            historyStatus.textContent = '获取历史对话失败: ' + error.message;
+            historyStatus.style.display = 'block';
+            sessionList.style.display = 'none';
+        });
+    }
+    
+    // 显示会话的详细对话
+    function displaySessionChats(chats) {
+        // 清空当前历史对话
+        chatHistory.innerHTML = '';
+        chatHistory.style.display = 'block';
+        
+        // 创建对话历史列表
+        const historyList = document.createElement('ul');
+        historyList.className = 'history-list';
+        
+        // 遍历每条对话
+        chats.forEach(chat => {
+            // 创建问题项
+            const questionItem = document.createElement('li');
+            questionItem.className = 'history-question';
+            questionItem.textContent = `问: ${chat.question}`;
+            historyList.appendChild(questionItem);
+            
+            // 创建回答项
+            const answerItem = document.createElement('li');
+            answerItem.className = 'history-answer';
+            answerItem.textContent = `答: ${chat.answer}`;
+            historyList.appendChild(answerItem);
+        });
+        
+        // 将对话历史列表添加到页面
+        chatHistory.appendChild(historyList);
     }
 
     // 获取请求头，包含用户认证信息

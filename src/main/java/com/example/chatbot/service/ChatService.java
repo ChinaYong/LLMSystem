@@ -15,6 +15,10 @@ import java.time.LocalDateTime;  // 日期时间类
 import java.time.LocalTime;  // 时间类
 import java.util.*;  // 集合框架
 import java.util.logging.Logger;  // 日志记录
+import java.util.stream.Collectors;  // 用于流操作
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 
 // @Service 注解表明这是一个Spring服务组件，Spring会自动管理它的生命周期
 @Service
@@ -121,6 +125,50 @@ public class ChatService {
     public void deleteChat(Long id) {
         // 调用仓库方法删除指定ID的记录
         chatRepository.deleteById(id);
+    }
+    
+    /**
+     * 获取用户的所有会话ID
+     * @param userId 用户ID
+     * @return 该用户的所有会话ID列表
+     */
+    public List<String> getSessionIdsByUserId(Long userId) {
+        return chatRepository.findDistinctSessionIdsByUserId(userId);
+    }
+    
+    /**
+     * 获取用户的历史对话，按会话ID分组
+     * @param userId 用户ID
+     * @return 按会话ID分组的聊天记录Map
+     */
+    public Map<String, List<Chat>> getUserChatHistoryBySession(Long userId) {
+        List<Chat> allUserChats = chatRepository.findByUserIdOrderBySessionId(userId);
+        Map<String, List<Chat>> chatsBySession = new HashMap<>();
+        
+        // 按sessionId分组
+        for (Chat chat : allUserChats) {
+            String sessionId = chat.getSessionId();
+            if (!chatsBySession.containsKey(sessionId)) {
+                chatsBySession.put(sessionId, new ArrayList<>());
+            }
+            chatsBySession.get(sessionId).add(chat);
+        }
+        
+        return chatsBySession;
+    }
+    
+    /**
+     * 获取用户特定会话的对话历史
+     * @param userId 用户ID
+     * @param sessionId 会话ID
+     * @return 该会话的所有聊天记录
+     */
+    public List<Chat> getChatsByUserIdAndSessionId(Long userId, String sessionId) {
+        List<Chat> allChats = chatRepository.findBySessionId(sessionId);
+        return allChats.stream()
+                .filter(chat -> chat.getUserId().equals(userId))
+                .sorted(Comparator.comparing(Chat::getCreatedAt))
+                .collect(Collectors.toList());
     }
 
     /**

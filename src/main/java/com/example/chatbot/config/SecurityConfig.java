@@ -101,13 +101,9 @@ public class SecurityConfig {
                 User adminUser = new User();
                 adminUser.setUsername("admin");
                 adminUser.setPassword(passwordEncoder.encode("admin123"));
-                adminUser.setEmail("admin@example.com");
                 adminUser.setRole("ROLE_ADMIN");
+                adminUser.setSessionId("admin-session");
                 adminUser.setCreatedAt(LocalDateTime.now());
-                adminUser.setEnabled(true);
-                adminUser.setAccountNonExpired(true);
-                adminUser.setAccountNonLocked(true);
-                adminUser.setCredentialsNonExpired(true);
                 userRepository.save(adminUser);
                 System.out.println("已创建管理员用户: admin / admin123");
             }
@@ -117,13 +113,9 @@ public class SecurityConfig {
                 User normalUser = new User();
                 normalUser.setUsername("user");
                 normalUser.setPassword(passwordEncoder.encode("user123"));
-                normalUser.setEmail("user@example.com");
                 normalUser.setRole("ROLE_USER");
+                normalUser.setSessionId("user-session");
                 normalUser.setCreatedAt(LocalDateTime.now());
-                normalUser.setEnabled(true);
-                normalUser.setAccountNonExpired(true);
-                normalUser.setAccountNonLocked(true);
-                normalUser.setCredentialsNonExpired(true);
                 userRepository.save(normalUser);
                 System.out.println("已创建普通用户: user / user123");
             }
@@ -146,24 +138,9 @@ public class SecurityConfig {
                 needsUpdate = true;
             }
             
-            // 确保账户状态标志正确设置
-            if (!user.isEnabled()) {
-                user.setEnabled(true);
-                needsUpdate = true;
-            }
-            
-            if (!user.isAccountNonExpired()) {
-                user.setAccountNonExpired(true);
-                needsUpdate = true;
-            }
-            
-            if (!user.isAccountNonLocked()) {
-                user.setAccountNonLocked(true);
-                needsUpdate = true;
-            }
-            
-            if (!user.isCredentialsNonExpired()) {
-                user.setCredentialsNonExpired(true);
+            // 确保用户有会话ID
+            if (user.getSessionId() == null) {
+                user.setSessionId("session-" + user.getUsername() + "-" + System.currentTimeMillis());
                 needsUpdate = true;
             }
             

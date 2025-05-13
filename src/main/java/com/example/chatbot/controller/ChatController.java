@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 聊天记录 CRUD 接口
@@ -54,5 +55,28 @@ public class ChatController {
     public ResponseEntity<Void> deleteChat(@PathVariable Long id) {
         chatService.deleteChat(id);
         return ResponseEntity.noContent().build();
+    }
+    
+    /** 获取用户的所有会话ID */
+    @GetMapping("/user/{userId}/sessions")
+    public ResponseEntity<List<String>> getUserSessionIds(@PathVariable Long userId) {
+        List<String> sessionIds = chatService.getSessionIdsByUserId(userId);
+        return ResponseEntity.ok(sessionIds);
+    }
+    
+    /** 获取用户的历史对话，按会话ID分组 */
+    @GetMapping("/user/{userId}/history")
+    public ResponseEntity<Map<String, List<Chat>>> getUserChatHistory(@PathVariable Long userId) {
+        Map<String, List<Chat>> chatHistory = chatService.getUserChatHistoryBySession(userId);
+        return ResponseEntity.ok(chatHistory);
+    }
+    
+    /** 获取用户特定会话的对话历史 */
+    @GetMapping("/user/{userId}/session/{sessionId}")
+    public ResponseEntity<List<Chat>> getUserSessionChats(
+            @PathVariable Long userId,
+            @PathVariable String sessionId) {
+        List<Chat> sessionChats = chatService.getChatsByUserIdAndSessionId(userId, sessionId);
+        return ResponseEntity.ok(sessionChats);
     }
 }
