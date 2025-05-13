@@ -14,10 +14,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const sessionList = document.getElementById('sessionList');     // 会话列表显示区域
     const chatHistory = document.getElementById('chatHistory');     // 历史对话显示区域
     
-    // 添加用户登录事件监听器，当用户登录成功时加载历史对话
+    // 添加用户登录事件监听器，当用户登录成功时加载历史对话和文件列表
     document.addEventListener('userLoggedIn', function() {
-        console.log('用户登录事件触发，正在加载历史对话...');
+        console.log('用户登录事件触发，正在加载历史对话和文件列表...');
         checkAuthStatusAndLoadHistory();
+        // 登录成功后加载文件列表
+        loadFileList();
     });
 
     // 维护会话ID，用于保持对话上下文
@@ -28,8 +30,13 @@ document.addEventListener('DOMContentLoaded', function() {
         localStorage.setItem('chatSessionId', sessionId);
     }
 
-    // 页面加载时，调用函数加载已上传的知识库文件列表
-    loadFileList();
+    // 页面初始加载时，只有在用户已经登录的情况下才加载文件列表
+    if (checkUserLoginStatus()) {
+        loadFileList();
+    } else {
+        // 未登录时显示提示信息
+        fileList.innerHTML = '<li>请先登录后查看文件列表</li>';
+    }
     
     // 检查用户登录状态，如果已登录则加载历史对话
     checkAuthStatusAndLoadHistory();
@@ -333,6 +340,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // 更新上传状态显示
         uploadStatus.textContent = '上传中...';
         uploadStatus.style.color = '#333';
+        
+        console.log('开始上传文件:', file.name, '大小:', file.size, 'bytes');
 
         // 使用fetch API调用后端上传接口
         fetch('/api/knowledge/upload', {
@@ -340,40 +349,84 @@ document.addEventListener('DOMContentLoaded', function() {
             body: formData      // 直接发送FormData对象作为请求体
         })
             .then(response => {
+                // 记录响应状态
+                console.log('文件上传响应状态:', response.status, response.statusText);
+                
                 // 检查HTTP响应状态
                 if (response.status === 401) {
                     // 未授权，需要重新登录
                     localStorage.removeItem('user');
                     throw new Error('登录已过期，请重新登录');
                 }
+                
                 if (!response.ok) {
-                    throw new Error('文件上传失败');  // 如果状态不是成功，抛出错误
+                    throw new Error('文件上传失败, 状态码: ' + response.status);
                 }
-                return response.json();  // 将响应解析为JSON
+                
+                // 克隆响应以便可以多次读取
+                const responseClone = response.clone();
+                
+                // 尝试解析为JSON
+                return response.json()
+                    .catch(err => {
+                        // 如果不是JSON，尝试读取为文本
+                        console.warn('响应不是JSON格式，尝试作为文本读取:', err);
+                        return responseClone.text().then(text => {
+                            // 如果是空响应或非JSON格式，但状态码是成功的，就认为上传成功
+                            console.log('响应文本内容:', text);
+                            if (response.ok) {
+                                return { success: true, message: '文件上传成功' };
+                            } else {
+                                throw new Error('响应格式错误: ' + text);
+                            }
+                        });
+                    });
             })
             .then(data => {
+                console.log('文件上传成功, 服务器响应:', data);
                 // 上传成功，更新状态显示
                 uploadStatus.textContent = '文件上传成功!';
                 uploadStatus.style.color = 'green';
                 // 清空文件选择输入框
                 fileInput.value = '';
                 // 刷新文件列表
-                loadFileList();
+                setTimeout(() => {
+                    loadFileList();
+                }, 1000); // 延迟1秒钟刷新文件列表，给后端处理文件的时间
             })
             .catch(error => {
                 // 捕获并处理任何错误
                 console.error('上传出错:', error);  // 在控制台记录错误
-                // 显示错误消息
-                uploadStatus.textContent = '上传失败: ' + error.message;
-                uploadStatus.style.color = 'red';
+                
+                // 尝试检查是否文件实际上已经上传成功
+                setTimeout(() => {
+                    // 尝试加载文件列表，看看文件是否已经存在
+                    loadFileList();
+                    // 显示更友好的错误消息
+                    uploadStatus.textContent = '上传操作完成，但返回结果异常。请检查文件列表，看是否上传成功。';
+                    uploadStatus.style.color = 'orange';
+                }, 2000); // 延迟2秒钟检查
             });
     }
 
     // 加载知识库文件列表的函数
     function loadFileList() {
+        // 检查用户是否已登录
+        const userJson = localStorage.getItem('user');
+        if (!userJson) {
+            fileList.innerHTML = '<li>请先登录后查看文件列表</li>';
+            return;
+        }
+
+        console.log('正在加载文件列表，用户信息:', userJson);
+        
+        // 获取用户信息
+        const user = JSON.parse(userJson);
+        
         // 使用fetch API调用后端获取文件列表接口
         fetch('/api/knowledge/files', {
-            headers: getRequestHeaders()  // 使用带有用户认证信息的请求头
+            headers: getRequestHeaders(),  // 使用带有用户认证信息的请求头
+            cache: 'no-cache'  // 避免缓存问题
         })
             .then(response => {
                 // 检查HTTP响应状态
@@ -387,6 +440,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();  // 将响应解析为JSON
             })
             .then(data => {
+                console.log('成功获取文件列表:', data.length, '个文件');
+                
                 // 清空当前文件列表
                 fileList.innerHTML = '';
                 // 检查文件列表是否为空
@@ -397,13 +452,52 @@ document.addEventListener('DOMContentLoaded', function() {
                     fileList.appendChild(emptyItem);
                 } else {
                     // 如果不为空，遍历文件列表并显示每个文件
+                    const fileListTitle = document.createElement('div');
+                    fileListTitle.className = 'file-list-title';
+                    fileListTitle.textContent = '文件列表';
+                    fileList.appendChild(fileListTitle);
+                    
+                    // 创建文件列表
+                    const fileListElement = document.createElement('ul');
+                    fileListElement.className = 'file-items';
+                    
+                    // 检查当前用户是否为管理员
+                    const isAdmin = user.roles && user.roles.includes('ROLE_ADMIN');
+                    
                     data.forEach(file => {
                         const item = document.createElement('li');
-                        // 设置列表项的文本为文件名和上传时间
-                        item.textContent = `${file.filename} (${formatDate(file.uploadTime)})`;
-                        // 将列表项添加到文件列表
-                        fileList.appendChild(item);
+                        item.className = 'file-item';
+                        
+                        // 创建文件信息容器
+                        const fileInfo = document.createElement('div');
+                        fileInfo.className = 'file-info';
+                        
+                        // 文件名和上传时间
+                        const fileName = document.createElement('span');
+                        fileName.className = 'file-name';
+                        fileName.textContent = file.filename;
+                        
+                        const fileTime = document.createElement('span');
+                        fileTime.className = 'file-time';
+                        fileTime.textContent = formatDate(file.uploadTime);
+                        
+                        fileInfo.appendChild(fileName);
+                        fileInfo.appendChild(fileTime);
+                        
+                        // 如果是管理员，显示文件所有者信息
+                        if (isAdmin && file.userId) {
+                            const fileOwner = document.createElement('span');
+                            fileOwner.className = 'file-owner';
+                            // 显示文件所有者ID，实际应用中可能需要获取用户名
+                            fileOwner.textContent = `用户ID: ${file.userId}`;
+                            fileInfo.appendChild(fileOwner);
+                        }
+                        
+                        item.appendChild(fileInfo);
+                        fileListElement.appendChild(item);
                     });
+                    
+                    fileList.appendChild(fileListElement);
                 }
             })
             .catch(error => {

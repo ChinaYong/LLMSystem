@@ -5,6 +5,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Column;
 
 import java.time.LocalDateTime;
 
@@ -27,6 +28,10 @@ public class Document {
 
     // 上传时间
     private LocalDateTime uploadTime;
+    
+    // 文档所有者的用户ID
+    @Column(name = "user_id")
+    private Long userId;
 
     public Document() {}
 
@@ -39,4 +44,6 @@ public class Document {
     public void setFilepath(String filepath) { this.filepath = filepath; }
     public LocalDateTime getUploadTime() { return uploadTime; }
     public void setUploadTime(LocalDateTime uploadTime) { this.uploadTime = uploadTime; }
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
 }
