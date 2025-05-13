@@ -11,6 +11,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const uploadStatus = document.getElementById('uploadStatus');   // 上传状态显示区域
     const fileList = document.getElementById('fileList');           // 文件列表显示区域
 
+    // 维护会话ID，用于保持对话上下文
+    let sessionId = localStorage.getItem('chatSessionId');
+    // 如果localStorage中没有会话ID，则创建一个新的
+    if (!sessionId) {
+        sessionId = generateUUID();
+        localStorage.setItem('chatSessionId', sessionId);
+    }
+
     // 页面加载时，调用函数加载已上传的知识库文件列表
     loadFileList();
 
@@ -93,7 +101,10 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/api/chat', {
             method: 'POST',                 // HTTP请求方法：POST
             headers: getRequestHeaders(),   // 使用带有用户认证信息的请求头
-            body: JSON.stringify({ question: message })  // 将消息对象转为JSON字符串作为请求体
+            body: JSON.stringify({ 
+                question: message,
+                sessionId: sessionId        // 添加会话ID
+            })  // 将消息对象转为JSON字符串作为请求体
         })
             .then(response => {
                 // 检查HTTP响应状态
@@ -112,6 +123,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 chatContainer.removeChild(typingIndicator);
                 // 将系统回复添加到聊天容器
                 appendMessage(data.answer, 'system');
+                
+                // 如果响应中包含会话ID，则更新本地存储
+                if (data.sessionId) {
+                    sessionId = data.sessionId;
+                    localStorage.setItem('chatSessionId', sessionId);
+                }
             })
             .catch(error => {
                 // 捕获并处理任何错误
@@ -270,6 +287,14 @@ document.addEventListener('DOMContentLoaded', function() {
             day: '2-digit',     // 显示日期（两位数）
             hour: '2-digit',    // 显示小时（两位数）
             minute: '2-digit'   // 显示分钟（两位数）
+        });
+    }
+
+    // 生成UUID的辅助函数
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
         });
     }
 });

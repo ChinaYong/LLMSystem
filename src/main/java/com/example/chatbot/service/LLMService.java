@@ -225,21 +225,21 @@ public class LLMService {
 
         try {
             // 构建更完善的提示词
-            String fullPrompt = String.format(
-                "你是一个有用的AI助手，请用中文回答以下问题，给出详细的解释：\n\n用户问题：%s\n\n助手回答：",
-                userQuestion
-            );
+//            String fullPrompt = String.format(
+//                "你是一个AI助手，能与用户闲聊或者解答用户问题：\n\n用户说：%s\n\n助手回答：",
+//                userQuestion
+//            );
 
-            logger.info("调用 LLM 生成简单回复，提示词长度: " + fullPrompt.length());
+            logger.info("调用 LLM 生成简单回复，提示词长度: " + userQuestion.length());
 
             // 构造请求体
             Map<String, Object> req = Map.of(
                     "model", model,
-                    "prompt", fullPrompt,
+                    "prompt", userQuestion,
                     "stream", false
             );
 
-            // 发送请求
+            // 发送请求到Ollama
             Map<String, Object> resp = client.post()
                     .uri("/api/generate")
                     .bodyValue(req)

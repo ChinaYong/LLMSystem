@@ -164,31 +164,45 @@ public class ChatService {
             // 2. 根据不同意图类型处理
             String answer;
             // 使用switch语句根据不同的意图类型调用不同的处理方法
+//            switch (intent) {
+//                case CHIT_CHAT:
+//                    // 处理闲聊类型的问题
+//                    answer = handleChitChat(question, sessionState);
+//                    break;
+//                case SYSTEM:
+//                    // 处理系统相关的问题
+//                    answer = handleSystemQuestion(question, sessionState);
+//                    break;
+//                case SENSITIVE:
+//                    // 处理敏感内容
+//                    answer = handleSensitiveContent(question, sessionState);
+//                    break;
+//                case UNCLEAR:
+//                    // 处理不明确的问题
+//                    answer = handleUnclearQuestion(question, sessionState);
+//                    break;
+//                case OUT_OF_SCOPE:
+//                    // 处理超出范围的问题
+//                    answer = handleOutOfScopeQuestion(question, sessionState);
+//                    break;
+//                case KNOWLEDGE:
+//                default:
+//                    // 对于知识型问题，使用知识库检索
+//                    answer = handleKnowledgeQuery(question, sessionState);
+//                    break;
+//            }
             switch (intent) {
-                case CHIT_CHAT:
-                    // 处理闲聊类型的问题
-                    answer = handleChitChat(question, sessionState);
-                    break;
-                case SYSTEM:
-                    // 处理系统相关的问题
-                    answer = handleSystemQuestion(question, sessionState);
-                    break;
-                case SENSITIVE:
-                    // 处理敏感内容
-                    answer = handleSensitiveContent(question, sessionState);
-                    break;
-                case UNCLEAR:
-                    // 处理不明确的问题
-                    answer = handleUnclearQuestion(question, sessionState);
-                    break;
-                case OUT_OF_SCOPE:
-                    // 处理超出范围的问题
-                    answer = handleOutOfScopeQuestion(question, sessionState);
-                    break;
-                case KNOWLEDGE:
-                default:
-                    // 对于知识型问题，使用知识库检索
+                case ACCEPT:
                     answer = handleKnowledgeQuery(question, sessionState);
+                    break;
+                case REFUSE, OUT_OF_SCOPE:
+                    answer = handleRefuseQuestion(question, sessionState);
+                    break;
+                case SWITCH:
+                    answer = "正常转接人工客服，请稍等...";
+                    break;
+                default:
+                    answer = handleRefuseQuestion(question, sessionState);
                     break;
             }
 
@@ -590,13 +604,13 @@ public class ChatService {
     }
 
     /**
-     * 处理不明确的问题
+     * 处理拒绝回复的问题
      */
-    private String handleUnclearQuestion(String question, Map<String, Object> sessionState) {
+    private String handleRefuseQuestion(String question, Map<String, Object> sessionState) {
         String[] responses = {
-            "抱歉，我不太理解您的问题。能否换一种方式表述，或提供更多细节？",
-            "您的问题有点模糊，能否详细说明一下您想了解什么？",
-            "我没能完全理解您的意思。请问您能更具体地描述您的问题吗？"
+            "抱歉，您的提问不符合回复要求，请换个问题",
+            "问题违反条例，拒绝服务",
+            "拒绝回复"
         };
         return responses[(int)(Math.random() * responses.length)];
     }
@@ -633,9 +647,11 @@ public class ChatService {
             }
         }
 
-        // 3. 如果没有找到相关知识片段，返回无法回答的消息
+        // 3. 如果没有找到相关知识片段附加提示信息
         if (relevantSegments.isEmpty()) {
-            return "抱歉，我的知识库中没有与您问题相关的信息。您可以尝试换一种方式提问，或询问其他问题。";
+//            return "抱歉，我的知识库中没有与您问题相关的信息。您可以尝试换一种方式提问，或询问其他问题。";
+            return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext)
+                    + "\n\n\n该回复并未参考知识库内容，请注意甄别";
         }
 
         // 4. 调用 LLM 服务生成回答，加入对话历史作为上下文
