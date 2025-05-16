@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (userJson) {
             const user = JSON.parse(userJson);
             // 可以根据实际情况添加认证信息
-            // 这里简单示例，你也可以使用token等方式
+            // 这里简单示例，也可以使用token等方式
             headers['X-User-Id'] = user.userId;
             headers['X-Username'] = user.username;
         }

@@ -82,14 +82,14 @@
             <label for="confirmPassword">确认密码</label>
             <input type="password" id="confirmPassword" name="confirmPassword" required>
         </div>
-        <div class="form-group">
-            <label for="email">邮箱（可选）</label>
-            <input type="email" id="email" name="email">
-        </div>
-        <div class="form-group">
-            <label for="fullName">姓名（可选）</label>
-            <input type="text" id="fullName" name="fullName">
-        </div>
+<!--        <div class="form-group">-->
+<!--            <label for="email">邮箱（可选）</label>-->
+<!--            <input type="email" id="email" name="email">-->
+<!--        </div>-->
+<!--        <div class="form-group">-->
+<!--            <label for="fullName">姓名（可选）</label>-->
+<!--            <input type="text" id="fullName" name="fullName">-->
+<!--        </div>-->
         <div class="form-group">
             <label for="role">角色</label>
             <select id="role" name="role">
@@ -111,8 +111,8 @@ document.getElementById('registerForm').addEventListener('submit', function(e) {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     const confirmPassword = document.getElementById('confirmPassword').value;
-    const email = document.getElementById('email').value;
-    const fullName = document.getElementById('fullName').value;
+    // const email = document.getElementById('email').value;
+    // const fullName = document.getElementById('fullName').value;
     const role = document.getElementById('role').value;
     
     // 表单验证
@@ -134,8 +134,8 @@ document.getElementById('registerForm').addEventListener('submit', function(e) {
     const registerData = {
         username: username,
         password: password,
-        email: email || null,  // 如果为空字符串，则设为null
-        fullName: fullName || null,
+        // email: email || null,  // 如果为空字符串，则设为null
+        // fullName: fullName || null,
         role: role
     };
     
