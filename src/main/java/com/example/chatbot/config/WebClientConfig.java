@@ -10,11 +10,26 @@ public class WebClientConfig {
 
     @Value("${ollama.api.url:http://localhost:11434}")
     private String ollamaUrl;
+    
+    @Value("${deepseek.api.url:https://api.deepseek.com/v1}")
+    private String deepseekUrl;
+    
+    @Value("${deepseek.api.key:}")
+    private String deepseekApiKey;
 
     @Bean
     public WebClient ollamaClient() {
         return WebClient.builder()
                 .baseUrl(ollamaUrl)
+                .build();
+    }
+    
+    @Bean
+    public WebClient deepseekClient() {
+        return WebClient.builder()
+                .baseUrl(deepseekUrl)
+                .defaultHeader("Authorization", "Bearer " + deepseekApiKey)
+                .defaultHeader("Content-Type", "application/json")
                 .build();
     }
 }

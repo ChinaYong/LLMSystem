@@ -15,7 +15,8 @@ import org.springframework.stereotype.Component;
 @Data
 public class PromptProperties {
     /** 系统级设定（人格、角色、语气等） */
-    private String system;
+    private String system = "你是一个AI助理。如果用户问你问题，不涉及政治、色情等敏感内容，那么直接回复。如果用户咨询可能引起纠纷的法律、医学等内容，要强调仅供参考。" +
+            "你还可能会从Prompt中收到与用户的历史对话，仅在必要时参考历史对话，比如用户问题需要结合历史对话回答，其余情况一律无视历史对话。";
 
     /** 当知识库为空或不足时的兜底回答 */
     private String fallback;

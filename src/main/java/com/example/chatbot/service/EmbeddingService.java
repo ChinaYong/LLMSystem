@@ -221,7 +221,7 @@ public class EmbeddingService {
      * 远程 Embedding API 实现
      */
     private float[] embedViaRemoteApi(String text) {
-        // 这里可以实现第三方API如OpenAI、DeepSeek等
+        // 这里可以实现第三方API如OpenAI等
         logger.warning("远程API嵌入尚未实现，返回零向量");
         return new float[512];
     }

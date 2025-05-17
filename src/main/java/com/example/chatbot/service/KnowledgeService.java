@@ -63,7 +63,7 @@ public class KnowledgeService {
         String originalFilename = file.getOriginalFilename();
         // 2. 目标文件路径：uploadDir/{timestamp}_{原名}
         String storedName = System.currentTimeMillis() + "_" + originalFilename;
-        Path target = uploadDir.resolve(storedName);
+        Path target = uploadDir.resolve(storedName);    //拼接路径与文件名
         // 3. 保存到本地
         file.transferTo(target.toFile());
 

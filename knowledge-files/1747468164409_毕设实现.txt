@@ -1,0 +1,1199 @@
+# 基于LLM的大型智能客服系统项目设计与实现
+
+## 项目概述
+
+本项目旨在开发一个基于大型语言模型（LLM）的智能客服系统。后端采用 **Java Spring Boot 3**，前端使用 **HTML/CSS/JavaScript**，数据库使用 **MySQL**，缓存使用 **Redis**，构建工具为 **Maven**。项目定位于本地部署为主，同时也考虑部署上线（例如使用Docker容器）的方案。系统主要功能和非功能需求如下：
+
+- **功能性需求：**
+  1. **意图识别**：能够对用户问题进行分类，判断用户意图（例如咨询、投诉、闲聊等），必要时决定是否需要转人工处理。
+  2. **知识库管理**：支持用户导入本地文档（如TXT、PDF），形成知识库供问答时参考。
+  3. **多轮对话**：支持与用户进行多轮次对话，保持上下文记忆，理解对话历史。
+  4. **答案生成**：利用LLM结合知识库内容生成回答，尽量做到准确、有据可依。
+  5. **用户管理**：提供用户注册、登录功能（当前仅普通用户，后续可扩展管理员等）。
+  6. **接口服务**：后端提供清晰的REST API接口，供前端调用，实现上述功能的交互。
+  7. **转人工客服**：当AI无法可靠回答或识别到需要人工介入时，提供接口将会话转交给人工客服（或提示人工介入）。
+
+- **非功能性需求：**
+  - 开发环境：使用 IntelliJ IDEA 等工具进行开发，代码遵循良好风格并包含详细注释，方便维护和学习。
+  - 框架与组件：后端基于 Spring Boot 3，安全框架采用 Spring Security，使用 JPA 与 MySQL 交互，使用 Redis 做缓存加速和会话存储。
+  - 性能要求：系统可处理并发请求，保证一定的响应速度（优化数据库查询，利用缓存，异步调用LLM接口等）。
+  - 安全性：用户密码等敏感数据加密存储（如使用哈希算法），接口需要鉴权（如JWT令牌验证）。防止常见安全漏洞（如SQL注入、XSS等）。
+  - LLM集成：支持使用在线LLM API（例如 **DeepSeek** 平台）或本地部署的LLM服务（例如 **Ollama** 运行的DeepSeek模型），方便切换。 ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=The%20DeepSeek%20API%20uses%20an,to%20access%20the%20DeepSeek%20API))
+
+## 系统架构设计
+
+为了满足上述需求，我们采用分层架构和模块化设计，将系统划分为前端UI、后端服务、数据库/缓存和LLM服务等部分。如图所示，系统整体流程如下：
+
+- **用户界面（前端）**：用户通过浏览器访问聊天界面，输入问题或请求。前端页面通过JavaScript调用后端提供的API，与后端交互。
+- **后端服务（Spring Boot）**：后端提供一系列REST API接口，涵盖用户注册登录、知识库上传、聊天问答等功能。控制层接受前端请求，调用业务服务层处理业务逻辑。
+- **业务层与模型集成**：业务服务层负责核心逻辑，例如意图识别、知识检索、对话上下文管理和调用LLM生成答案等。它将根据需要查询数据库中的用户数据、知识库内容，或者访问缓存中的对话上下文，并调用LLM接口获取回复。
+- **LLM模型服务**：后端通过HTTP请求调用LLM模型接口获取回答。根据配置可以走两种路径：
+  - *在线模式*：调用 DeepSeek 提供的云端API。DeepSeek的API兼容OpenAI格式 ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=The%20DeepSeek%20API%20uses%20an,to%20access%20the%20DeepSeek%20API))（例如REST接口`/v1/chat/completions`），只需提供API Key即可调用云端大型模型获取回复。
+  - *本地模式*：调用本地部署的LLM接口。例如使用 Ollama 在本地运行 DeepSeek 模型。Ollama 安装后会在本地开启HTTP服务（默认监听 `localhost:11434`），并兼容OpenAI的API调用格式 ([OpenAI compatibility · Ollama Blog](https://ollama.com/blog/openai-compatibility#:~:text=To%20invoke%20Ollama%E2%80%99s%20OpenAI%20compatible,http%3A%2F%2Flocalhost%3A11434))。这样本地即可像调用OpenAI接口一样调用本地模型。
+- **数据库（MySQL）**：用于持久化存储用户信息（账号、密码等）、知识库文档信息（例如上传的文件内容）以及必要的日志记录等。通过Spring Data JPA进行访问。
+- **缓存（Redis）**：用于存储缓存数据，提高性能。例如会话的上下文消息记录可以缓存在Redis中，减少数据库交互并实现跨服务器的会话共享；热门问答的结果或知识库查询结果也可缓存以加速重复查询。
+- **人工客服接口**：当检测到用户的问题超出AI能力或具有特定意图时，系统将返回一个提示或状态，前端据此可以提示用户转人工。后端预留了接口（或使用特殊响应）来处理人工介入请求（例如在后台记录该请求，通知客服人员等）。
+
+**工作流程（聊天问答）**：当已登录用户在前端提出问题时，后端流程如下：
+1. **意图分类** – 系统首先对问题进行意图识别。这可以通过规则（关键词）或调用LLM分类模型来实现。如果判断需要人工（比如包含投诉/敏感意图），则标记需要转人工。
+2. **知识检索** – 系统在内部知识库中搜索与问题相关的内容。如果用户有上传文档，优先在这些文档中查找答案线索。检索可以通过全文搜索或向量检索（视实现复杂度）找到最相关的段落。
+3. **多轮对话上下文** – 系统获取当前会话的历史对话（比如Redis缓存的最近若干轮问答），将其作为上下文提供给LLM，以便模型理解前后的提问语境。
+4. **LLM回答生成** – 系统构建一个综合的提示（Prompt），其中包含上下文、检索到的知识内容和用户新问题，然后调用LLM接口生成回答。若使用DeepSeek API，则发送HTTP请求到云端；若使用本地Ollama，则请求本地服务接口。
+5. **结果处理** – 系统拿到LLM返回的答案。如果先前意图识别判断需要人工或LLM返回结果不确定，系统会返回一个表示需要人工处理的响应给前端；否则返回生成的答案。每轮问答记录追加到对话历史（缓存）中，供后续对话参考。
+6. **前端展示** – 前端收到回答后显示给用户。如果需要人工处理，前端可以引导用户等待人工或调用转人工接口。
+
+上述流程保证了每次回答都可以参考知识库并保持上下文，从而提高准确性。同时，通过意图识别确保在适当情况下引入人工客服，保证服务质量。
+
+## 模块划分与项目结构
+
+根据功能需求，我们将后端项目按职责分为若干模块：用户管理、知识库管理、对话问答（涵盖意图识别、多轮对话、答案生成和转人工接口）等。此外还有配置安全相关的模块。下面是项目主要文件结构（省略部分配置/测试文件）：
+
+- **项目根目录**  
+  - **pom.xml** – Maven项目配置，包含Spring Boot依赖（Web、Security、JPA、Redis等）以及LLM API所需的依赖。使用最新版本以确保兼容（如Spring Boot 3.x，Java 17）。  
+- **src/main/java/com/example/support/** – 源代码包命名为“support”示例（可根据实际项目命名约定修改）。  
+  - **SmartCustomerServiceApplication.java** – Spring Boot启动类，包含 `main` 方法。启动时会自动加载配置并启动内嵌Tomcat服务器。  
+  - **config/** – 配置类包，包含安全配置、LLM客户端配置等。  
+    - *SecurityConfig.java* – Spring Security安全配置，定义了密码编码、JWT过滤器、安全拦截规则等。  
+    - *LLMConfig.java*（可选） – 如果需要，将LLM相关设置（如API模式、本地或云端URL、模型名称、API密钥等）配置为Bean或配置属性。简单情况下也可直接在代码中使用 `application.properties` 配置。  
+  - **controller/** – 控制器层，定义REST接口，处理HTTP请求并调用服务层。  
+    - *AuthController.java* – 授权控制器，提供用户注册 `/api/auth/register` 和登录 `/api/auth/login` 接口。  
+    - *KnowledgeController.java* – 知识库控制器，提供文件上传接口（如 `/api/knowledge/upload`），以及（可选）查询知识库内容的接口。  
+    - *ChatController.java* – 聊天控制器，提供聊天接口（如 `/api/chat/ask` 提交用户问题）。也可以提供一个转人工接口（如 `/api/chat/transfer`），但在本设计中，当需要人工时直接在回答中给出提示即可。  
+  - **service/** – 服务层，包含主要业务逻辑，实现各模块功能。  
+    - *UserService.java* – 用户服务，封装用户注册、查询逻辑，调用UserRepository访问数据库。  
+    - *KnowledgeService.java* – 知识库服务，处理文档解析、存储和检索。负责将用户上传的TXT/PDF读取内容存入数据库，以及根据查询在知识库中搜索相关内容。  
+    - *ChatService.java* – 聊天服务，负责处理一次对话请求：调用意图识别模块、知识检索模块，维护上下文，并最终调用LLMClient生成回复。  
+    - *LLMClient.java* – LLM客户端接口，定义调用LLM模型的方法（例如 `ask(List<Message> messages): String`）。  
+    - *DeepSeekClient.java* – 实现LLMClient接口，封装调用DeepSeek在线API的细节。  
+    - *LocalLLMClient.java* – 实现LLMClient接口，封装调用本地Ollama API的细节。  
+    - （**说明**：LLMClient可以根据配置选择具体实现，例如通过 Spring 的 @Profile 或配置文件参数决定使用 DeepSeekClient 还是 LocalLLMClient 注入到ChatService 中。这样方便将来扩展到其它模型提供者。）  
+    - *IntentClassifier.java*（可选） – 意图识别模块。如果逻辑简单也可直接集成在ChatService中。若单独抽取，可以定义接口或类方法，通过规则或模型判断用户意图。  
+  - **model/** 或 **entity/** – 模型/实体定义，数据库表对应的Java类以及辅助的模型类。  
+    - *User.java* – 用户实体，映射数据库用户表，包含用户名、加密密码等字段，实现UserDetails接口以兼容Spring Security。  
+    - *Document.java* – 文档实体，表示知识库中的一个文档或文档片段，包含标题、内容文本，以及所属用户等信息。  
+    - *ChatMessage.java* – （可选）对话消息模型，用于封装多轮对话中的一条消息（字段包括角色role（user/assistant/system）、内容content、时间timestamp等）。在构造LLM对话请求或存储上下文时会用到。  
+  - **repository/** – 数据访问层，使用Spring Data JPA存储和查询数据库。  
+    - *UserRepository.java* – 用户仓库接口，继承JpaRepository，用于CRUD用户、按用户名查找用户等。  
+    - *DocumentRepository.java* – 文档仓库接口，用于存储和查询知识库文档。可以根据用户、关键字等查询文档内容。  
+  - **util/** – 工具类，如JWT生成验证工具、PDF解析工具等。根据需要创建，例如 *JwtUtil.java* 封装JWT的生成和校验，*PdfParser.java* 封装PDF文本提取逻辑。  
+- **src/main/resources/**  
+  - *application.properties* – 应用配置文件，配置数据库连接（JDBC URL、用户、密码）、Redis连接、LLM模式选择、DeepSeek API Key、本地模型名称等。通过配置中心，可以轻松切换在线/本地LLM模式等参数。  
+  - *schema.sql* / *data.sql* – （可选）初始化数据库的SQL脚本，例如创建用户表等。如果使用JPA自动建表，可以省略。  
+- **src/test/** – 测试代码（略）。
+
+接下来，我们详细介绍各主要模块的设计与实现，包括核心代码片段、注释和模块关系说明。
+
+## 用户管理模块
+
+**职责**：负责用户的注册、登录、认证与授权。普通用户可以注册账号并登录获取服务访问权限。用户信息需要安全存储（密码采用哈希加密），登录后采用JWT等机制保持会话状态。
+
+### 数据模型与存储（User实体）
+
+用户信息存储在MySQL中。使用JPA定义User实体类，对应数据库的用户表（例如`t_user`）。包含字段：用户ID、用户名、加密后的密码、（可选）邮箱等。为简化权限管理，暂时假定所有注册用户都是普通用户角色。我们让User实体实现 `UserDetails` 接口，这样Spring Security在进行身份验证时可以直接使用User实体。实现UserDetails接口需要提供用户名、密码和权限等方法。
+
+```java
+package com.example.support.model;
+
+import jakarta.persistence.*;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import java.util.Collection;
+import java.util.Collections;
+
+@Entity
+@Table(name = "users")  // 数据库中用户表名为users
+public class User implements UserDetails {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)  // 自增主键
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String username;  // 用户名（登录名），要求唯一
+
+    @Column(nullable = false)
+    private String password;  // 加密后的密码
+
+    // 若需要记录用户角色，这里简单处理，所有用户默认为ROLE_USER
+    private String role = "ROLE_USER";
+
+    // 构造方法、Getter和Setter省略...
+
+    // 实现UserDetails接口的方法:
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        // 返回用户的权限列表，这里只有一个普通用户角色
+        return Collections.singletonList(new SimpleGrantedAuthority(role));
+    }
+
+    @Override
+    public String getPassword() {
+        return password;
+    }
+
+    @Override
+    public String getUsername() {
+        return username;
+    }
+
+    // 帐号是否未过期、未锁定、凭证未过期、账号是否可用等，这里都返回true表示有效
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+}
+```
+
+**代码说明**：  
+- 使用 `@Entity` 和 `@Table` 将User类映射到数据库表。`username` 字段加了唯一约束，防止重复注册相同用户名。  
+- 实现 `UserDetails` 接口是为了结合Spring Security的认证流程。`getAuthorities()` 返回用户的权限集合，这里简单地赋予每个用户 “ROLE_USER” 权限。其他UserDetails的方法用于账号状态控制，这里默认所有账号有效。  
+- 密码将以加密形式存储（我们会在注册时对明文密码进行哈希，常用 BCrypt 算法）。  
+
+接下来，创建UserRepository接口，通过JPA操作用户数据：
+
+```java
+package com.example.support.repository;
+
+import com.example.support.model.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+    // 根据用户名查找用户，在登录和认证时会用到
+    Optional<User> findByUsername(String username);
+}
+```
+
+通过继承 JpaRepository，我们无需写实现即可获得常用的数据库操作方法。这里定义了 `findByUsername` 方法，Spring Data JPA 会根据方法名自动实现查询。返回Optional是为了处理用户不存在的情况。
+
+### 安全配置（Spring Security配置）
+
+Spring Security为我们提供了登录认证和请求鉴权的框架。我们需要配置以下内容：
+- **密码编码器**：用于对明文密码进行哈希以及验证密码。使用 BCrypt 强哈希算法。  
+- **用户详情服务**：告诉Spring Security如何加载用户信息用于认证。我们实现一个UserDetailsService接口，内部通过UserRepository查找用户。  
+- **认证管理器**：使用我们定义的用户详情和密码编码器来验证用户名密码。可以通过配置创建 AuthenticationManager Bean。  
+- **安全过滤规则**：定义哪些请求需要认证，哪些可以匿名访问。例如注册、登录接口应允许匿名访问，聊天和知识库接口需要登录后访问。  
+- **JWT过滤器**：我们采用JWT（JSON Web Token）来维护用户登录状态。用户登录成功后，后端生成JWT返回给前端，前端每次请求时在HTTP头加入这个JWT。我们需要在后端验证请求头中的JWT有效性并建立安全上下文。为此，可以实现一个过滤器，在每次请求时拦截“Authorization”头并验证JWT。
+
+下面是SecurityConfig安全配置的代码示例：
+
+```java
+package com.example.support.config;
+
+import com.example.support.repository.UserRepository;
+import com.example.support.util.JwtUtil;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import org.springframework.web.filter.OncePerRequestFilter;
+import java.io.IOException;
+
+@Configuration
+public class SecurityConfig {
+
+    @Autowired
+    private UserRepository userRepo;
+
+    @Autowired
+    private JwtUtil jwtUtil;  // JWT工具，用于生成和验证token (后面实现)
+
+    // 用户信息服务：通过用户名从数据库加载用户
+    @Bean
+    public UserDetailsService userDetailsService() {
+        return username -> userRepo.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("用户不存在: " + username));
+    }
+
+    // 密码编码器：使用BCrypt算法
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    // 认证管理器：用于登录时验证用户名密码
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+        return config.getAuthenticationManager();
+    }
+
+    // JWT认证过滤器：每次请求前验证JWT Token
+    @Bean
+    public OncePerRequestFilter jwtAuthenticationFilter() {
+        return new OncePerRequestFilter() {
+            @Override
+            protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+                    throws ServletException, IOException {
+                String authHeader = request.getHeader("Authorization");
+                if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                    String token = authHeader.substring(7);
+                    // 验证JWT有效性
+                    String username = jwtUtil.validateTokenAndGetUsername(token);
+                    if (username != null) {
+                        // 加载用户详情并将用户身份存入Security上下文
+                        var userDetails = userDetailsService().loadUserByUsername(username);
+                        var authToken = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                        // 设置当前请求的安全上下文
+                        authToken.setDetails(userDetails);
+                        // 将认证对象绑定到安全上下文，以便后续可以获取当前用户
+                        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(authToken);
+                    }
+                }
+                // 继续过滤链
+                chain.doFilter(request, response);
+            }
+        };
+    }
+
+    // 安全过滤链配置：定义请求访问策略和使用JWT过滤器
+    @Bean
+    public SecurityFilterChain filterChain(org.springframework.security.config.annotation.web.builders.HttpSecurity http) throws Exception {
+        http.csrf(csrf -> csrf.disable());  // 关闭CSRF（REST API一般用JWT防护即可）
+        http.authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/auth/**").permitAll()   // 注册、登录接口允许匿名访问
+                .anyRequest().authenticated()                  // 其他请求需要认证
+        );
+        http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));  // 不使用session，改用JWT
+        // 在用户名密码认证过滤器之前加入JWT过滤器
+        http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+}
+```
+
+**代码说明**：  
+- `userDetailsService()` 定义当Spring Security需要获取用户详情时，到数据库按用户名查询用户。如用户不存在则抛异常。  
+- `passwordEncoder()` 提供了BCryptPasswordEncoder实例，用于注册时加密密码和登录时验证密码。  
+- 配置了 `AuthenticationManager`（通过AuthenticationConfiguration自动构建），稍后会在登录时用它来验证用户凭证。  
+- `jwtAuthenticationFilter()` 定义了一个匿名内部类继承 OncePerRequestFilter。每次HTTP请求进来时，它检查请求头是否有“Authorization: Bearer ...”JWT，如果有就验证并解析出用户名，然后将该用户的信息设置到Spring Security的上下文中，表示此请求是以该用户身份登录的。验证使用了一个JwtUtil工具类方法 `validateTokenAndGetUsername`，我们需要实现JWT的签名验证和解析（见下）。  
+- `filterChain(HttpSecurity)` 方法配置了安全策略：所有 `/api/auth/` 开头的请求直接放行（注册、登录无需令牌），其他所有请求都必须经过认证；同时禁用了默认的Session会话（我们使用JWT，所以STATELESS无状态会话）；最后将我们自定义的JWT过滤器添加到Spring Security过滤链中，在默认的用户名密码过滤器之前执行（因为我们不是通过表单登陆，而是每次请求都携带JWT来认证）。  
+
+接下来，实现 `JwtUtil` 工具，用于生成和校验JWT。JWT可以选择对称签名（HMAC算法）或非对称（RSA/ECDSA）。这里用HMAC SHA256签名，一个服务器端秘密密钥`jwtSecret`即可。JwtUtil可以使用jjwt库实现，也可以手动构造。我们使用 jjwt 库来简化操作：
+
+```java
+package com.example.support.util;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
+import java.util.Date;
+import java.nio.charset.StandardCharsets;
+import javax.crypto.SecretKey;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+@Component
+public class JwtUtil {
+
+    @Value("${jwt.secret:defaultSecretKey}")  // 从配置文件读取JWT密钥（生产环境应更加安全地管理）
+    private String jwtSecret;
+    @Value("${jwt.expiration:3600000}")        // JWT过期时间，默认3600000毫秒(1小时)
+    private long jwtExpirationMs;
+
+    private SecretKey getSigningKey() {
+        // 将字符串密钥转换为HMAC签名用的SecretKey
+        byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    // 生成JWT Token，参数为用户名
+    public String generateToken(String username) {
+        Date now = new Date();
+        Date exp = new Date(now.getTime() + jwtExpirationMs);
+        return Jwts.builder()
+                .setSubject(username)                // 将用户名作为token主体
+                .setIssuedAt(now)                    // 签发时间
+                .setExpiration(exp)                  // 过期时间
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)  // 用密钥签名生成HS256令牌
+                .compact();
+    }
+
+    // 验证JWT并返回用户名。如果无效则返回null
+    public String validateTokenAndGetUsername(String token) {
+        try {
+            var claims = Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token);  // 解析JWT，若签名不正确或过期会抛异常
+            return claims.getBody().getSubject();   // 返回之前生成时设置的用户名
+        } catch (Exception e) {
+            // 捕获JWT无效、过期等异常
+            return null;
+        }
+    }
+}
+```
+
+**说明**：这里假设在配置文件中定义了 `jwt.secret`（用于签名的密钥，可以是任意随机字符串，正式环境最好足够复杂）和 `jwt.expiration`（有效期）。生成token时，将用户名写入payload，签名后返回给客户端。校验时，通过同样的密钥验证签名和有效期，如果通过则返回用户名，否则返回null。  
+
+### 接口与业务逻辑（AuthController & UserService）
+
+**注册接口**：用户提交用户名和密码进行注册。后端需要检查用户名是否已存在，如不存在则保存新用户（密码需要加密后保存）。  
+**登录接口**：用户提供用户名和密码进行登录。后端验证密码正确性，如果成功则生成JWT令牌返回给用户，以后用户每次请求在头部附上该令牌就可访问受保护资源。
+
+我们在 AuthController 中实现这两个接口。同时编写 UserService 帮助处理业务逻辑。
+
+```java
+package com.example.support.controller;
+
+import com.example.support.service.UserService;
+import com.example.support.model.User;
+import com.example.support.repository.UserRepository;
+import com.example.support.util.JwtUtil;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+
+    @Autowired
+    private UserService userService;
+    @Autowired
+    private AuthenticationManager authManager;
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    // 用户注册接口
+    @PostMapping("/register")
+    public ResponseEntity<String> register(@RequestBody User newUser) {
+        try {
+            userService.register(newUser);
+            return ResponseEntity.ok("注册成功");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("注册失败");
+        }
+    }
+
+    // 用户登录接口
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestParam String username, @RequestParam String password) {
+        try {
+            // 尝试认证用户名和密码
+            Authentication authentication = authManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(username, password));
+            // 认证通过，生成JWT令牌
+            String token = jwtUtil.generateToken(username);
+            // 返回令牌给客户端（实际项目中可以返回更多用户信息）
+            return ResponseEntity.ok(token);
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body("用户名或密码错误");
+        }
+    }
+}
+```
+
+```java
+package com.example.support.service;
+
+import com.example.support.model.User;
+import com.example.support.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepo;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    // 用户注册逻辑：保存新用户，密码进行哈希，加密存储
+    public void register(User newUser) throws IllegalArgumentException {
+        // 检查用户名是否已存在
+        if (userRepo.findByUsername(newUser.getUsername()).isPresent()) {
+            throw new IllegalArgumentException("用户名已被占用");
+        }
+        // 对明文密码进行加密
+        String encodedPwd = passwordEncoder.encode(newUser.getPassword());
+        newUser.setPassword(encodedPwd);
+        // 保存用户到数据库
+        userRepo.save(newUser);
+    }
+}
+```
+
+**说明**：  
+- 在注册接口，`AuthController.register` 从请求体获取User对象（需确保前端传递JSON包含username和password），调用 `userService.register` 处理。UserService中检查重复并对密码加密，然后使用UserRepository保存用户。成功则返回200 OK，失败则返回相应错误。  
+- 在登录接口，使用我们配置好的 `AuthenticationManager` 来验证用户名密码。如果验证成功（UserDetailsService会自动用PasswordEncoder检查密码），则调用JwtUtil生成一个JWT令牌返回。返回时我们直接把token作为响应body，这里为了简单未使用复杂的JSON封装。前端拿到token后，应将其保存（例如LocalStorage）并在后续请求的请求头附加 `Authorization: Bearer <token>`。SecurityConfig中的JWT过滤器会验证它，从而识别用户身份。  
+- 此外，如需退出登录，可以在前端删除本地保存的token即可（JWT是无状态的，服务器端默认不存储token状态，如需使某个token失效可考虑将其加入黑名单缓存）。  
+
+完成用户管理模块后，系统具备了用户注册和登录、令牌认证的能力。接下来实现知识库管理模块。
+
+## 知识库管理模块
+
+**职责**：让用户能够上传自己的本地文档（如TXT或PDF文件），系统将这些文档内容保存起来，作为知识库，以便回答问题时可以参考其中的内容，从而提供更准确的回答。主要功能包括：文档的上传导入、知识检索查询。
+
+### 文档数据模型
+
+创建 `Document` 实体类用于表示一份知识库文档。文档包含文本内容（可能较长），因此可以用 `TEXT` 类型字段存储。此外，可以包含文档标题、上传时间、所属用户等信息。这里我们将文档与用户关联，以支持每个用户有自己的知识库；当然如果设计为全局知识库，也可以不关联用户。
+
+```java
+package com.example.support.model;
+
+import jakarta.persistence.*;
+import java.util.Date;
+
+@Entity
+@Table(name = "documents")
+public class Document {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;   // 文档标题或名称
+    @Lob @Column(columnDefinition = "TEXT")
+    private String content; // 文本内容（可能比较长）
+
+    private Date uploadTime;
+
+    @ManyToOne
+    @JoinColumn(name = "user_id")  // 外键关联到用户
+    private User user;  // 上传该文档的用户（如果知识库是按用户区分）
+
+    // Getter, Setter, Constructors 略
+}
+```
+
+**说明**：  
+- `@Lob` 注解和 columnDefinition="TEXT" 将content映射为数据库的大文本类型，适合存储文章内容。  
+- `@ManyToOne` 将 Document 和 User 建立多对一关系，一个用户可以有多份文档。我们在Document表中有一个外键 user_id 指向用户表。通过这个关联，可以实现按用户查询文档。  
+- `uploadTime` 记录文档导入时间，可用于按时间排序或展示给用户。  
+
+对应的仓库接口 `DocumentRepository`:
+
+```java
+package com.example.support.repository;
+
+import com.example.support.model.Document;
+import com.example.support.model.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.List;
+
+public interface DocumentRepository extends JpaRepository<Document, Long> {
+    // 查找某用户下标题包含特定关键字的文档列表（用于简单检索）
+    List<Document> findByUserAndTitleContainingIgnoreCase(User user, String keyword);
+    // 查找某用户下内容包含关键字的文档列表
+    List<Document> findByUserAndContentContainingIgnoreCase(User user, String keyword);
+}
+```
+
+我们定义了两个检索函数，允许通过关键字在文档标题或内容中查找（忽略大小写）。这些方法将用于知识检索。当然，对于更高级的检索（如语义搜索），简单的SQL LIKE查询可能不够，我们后面会讨论改进方案。  
+
+### 文档上传接口与解析
+
+提供一个上传接口（例如`POST /api/knowledge/upload`），用户可以上传文件。后端接收到文件后，需要读取文件内容并存储到数据库（Document）。对于TXT文档，可以直接读取文本；对于PDF文档，需要使用PDF解析库提取文本内容。这里我们可以使用 Apache PDFBox 等开源库来实现PDF文本提取。
+
+**KnowledgeController** 实现上传接口，**KnowledgeService** 实现解析和保存逻辑：
+
+```java
+package com.example.support.controller;
+
+import com.example.support.service.KnowledgeService;
+import com.example.support.model.Document;
+import com.example.support.model.User;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.ResponseEntity;
+
+@RestController
+@RequestMapping("/api/knowledge")
+public class KnowledgeController {
+
+    @Autowired
+    private KnowledgeService knowledgeService;
+
+    // 文件上传接口（需要登录）, AuthenticationPrincipal注解获取当前登录用户
+    @PostMapping("/upload")
+    public ResponseEntity<String> uploadDocument(@AuthenticationPrincipal User currentUser,
+                                                 @RequestParam("file") MultipartFile file) {
+        if (currentUser == null) {
+            return ResponseEntity.status(401).body("未授权");
+        }
+        try {
+            knowledgeService.importDocument(file, currentUser);
+            return ResponseEntity.ok("文档上传成功");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("上传失败：" + e.getMessage());
+        }
+    }
+}
+```
+
+```java
+package com.example.support.service;
+
+import com.example.support.model.Document;
+import com.example.support.model.User;
+import com.example.support.repository.DocumentRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import java.util.Date;
+import java.io.IOException;
+
+@Service
+public class KnowledgeService {
+
+    @Autowired
+    private DocumentRepository docRepo;
+
+    // 导入文档：解析文件内容并保存Document对象
+    public void importDocument(MultipartFile file, User user) throws IOException {
+        String filename = file.getOriginalFilename();
+        // 简单根据文件名后缀判断类型
+        String content;
+        if (filename != null && filename.toLowerCase().endsWith(".pdf")) {
+            content = extractTextFromPDF(file.getBytes());
+        } else {
+            // 默认按文本处理
+            content = new String(file.getBytes(), "UTF-8");
+        }
+        // 创建Document实体并保存
+        Document doc = new Document();
+        doc.setTitle(filename);
+        doc.setContent(content);
+        doc.setUploadTime(new Date());
+        doc.setUser(user);
+        docRepo.save(doc);
+    }
+
+    // 从PDF字节中提取文本内容（使用PDFBox库）
+    private String extractTextFromPDF(byte[] pdfBytes) throws IOException {
+        // 调用PDFBox提取文本
+        try (var pdf = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
+            org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
+            return stripper.getText(pdf);
+        }
+    }
+
+    // 知识检索：根据用户问题，从该用户的文档中找到相关内容
+    public String searchKnowledge(User user, String query) {
+        // 简单实现：在用户所有文档内容中查找包含query关键词的段落
+        // 获取所有包含关键词的文档
+        var docs = docRepo.findByUserAndContentContainingIgnoreCase(user, query);
+        if (docs.isEmpty()) {
+            return "";  // 未找到相关内容
+        }
+        // 简化处理：取第一篇匹配的文档的内容返回（实际可提取多个片段）
+        String content = docs.get(0).getContent();
+        // 截取一部分内容（避免一次性提供太长内容给LLM）
+        int idx = content.toLowerCase().indexOf(query.toLowerCase());
+        if (idx != -1) {
+            // 提取 query 所在段落附近的一段文字
+            int start = Math.max(0, idx - 100);  // 前100字符开始
+            int end = Math.min(content.length(), idx + 300);  // 后300字符结束
+            return content.substring(start, end);
+        } else {
+            // 没有明确位置，就返回开头一部分
+            return content.substring(0, Math.min(500, content.length()));
+        }
+    }
+}
+```
+
+**说明**：  
+- `KnowledgeController.uploadDocument` 使用了 `@AuthenticationPrincipal` 注解获取当前登录用户（Spring Security在JWT验证通过后会将UserDetails放入安全上下文，这里直接拿到User实体）。只有登录后才能上传文档，否则返回401未授权。然后将文件交由 `knowledgeService.importDocument` 处理。  
+- `KnowledgeService.importDocument` 首先获取文件名，根据后缀决定解析方式。如果是PDF，用 `extractTextFromPDF` 方法；否则当作文本文件读取。`extractTextFromPDF` 使用 PDFBox 库从PDF二进制中提取纯文本字符串（注意需要在pom.xml添加PDFBox依赖，如 `org.apache.pdfbox:pdfbox:2.0.x` 最新版本）。解析出文本后，创建 Document 对象填充标题、内容、当前时间和所属用户，然后通过 `docRepo.save` 存入数据库。  
+- `KnowledgeService.searchKnowledge` 方法提供简单的知识检索功能：在用户的文档内容中查找包含查询关键词的内容。实现上，这里使用了之前定义的 `findByUserAndContentContainingIgnoreCase` 方法获取包含关键词的文档列表。如果有多条，我们为简化只取第一条匹配文档。然后找到关键词出现的位置，截取该位置附近的一段文本（例如前后若干字符），作为知识片段返回。这样做的目的是限制传给LLM的提示长度，避免一次注入过长内容。  
+  - *注意*：这种基于关键词的检索非常简单，效果有限。如果需要更准确的知识获取，可以考虑**向量检索**：将文档拆分为段落，对每段计算嵌入向量并存入向量数据库（如使用 **ChromaDB**、**FAISS** 或 Elasticsearch向量检索），查询时将用户问题也转换为向量，找出与之余弦相似度最高的几个段落作为上下文。 ([Building Chatbot using LLM based Retrieval Augmented Generation Method | by ritesh ratti, Ph.D | Medium](https://medium.com/@ritesh.ratti/building-chatbot-using-llm-based-retrieval-augmented-generation-method-4e854b65d925#:~:text=3,is%20used%20for%20this%20purpose)) ([Building Chatbot using LLM based Retrieval Augmented Generation Method | by ritesh ratti, Ph.D | Medium](https://medium.com/@ritesh.ratti/building-chatbot-using-llm-based-retrieval-augmented-generation-method-4e854b65d925#:~:text=The%20overall%20process%20can%20be,shown%20in%20figure%20below)) 这属于Retrieval-Augmented Generation (RAG) 技术，但实现较复杂，需要额外依赖，这里不展开。但设计上已留好接口，未来可以替换 `searchKnowledge` 方法的实现，以更先进的方法检索知识。  
+
+知识库模块完成后，用户可以上传文档，系统会解析并存储。在问答时可以检索到相关内容辅助回答。下面进入核心的聊天对话模块设计。
+
+## 聊天对话模块
+
+**职责**：处理用户的提问并生成回答，包括维护上下文的多轮对话、意图识别和LLM调用答案生成，同时在必要时触发“转人工”流程。
+
+整个聊天模块可以划分几个子功能：**意图识别**、**上下文管理**、**LLM回答生成**、**人工转接**。我们逐一说明其设计和实现，并展示ChatService如何将这些部分串联起来。
+
+### 意图识别
+
+意图识别用于判断用户的问题类型或目的，以便系统采取不同策略。例如：
+- **一般问答**：普通问题，将由知识库+LLM回答。
+- **寒暄闲聊**：与知识库无关的社交聊天，可直接由LLM回答（甚至可以引入特定人格等）。
+- **业务请求**：例如用户在询问账户相关或要求敏感操作，如果AI不能处理，可能需要人工介入。
+- **无法识别**：模型对用户意图不明确时，也可考虑转人工或要求澄清。
+
+实现意图识别有多种方式：可以基于关键词规则分类，也可以训练单独的分类模型，甚至可以直接调用LLM本身来进行分类（通过提示让LLM返回一个意图标签）。由于项目面向刚入门的开发者，我们可以选择从**简单规则**开始：比如如果用户问题包含“人工”“客服”等字样，就认为需要转人工；如果包含问候语，如“你好”“您好”，可归为闲聊；如果匹配某些业务关键词如“退款”“密码重置”，视为可能需要人工（或特定处理）。这些规则可以编码在代码中。将来可以替换为LLM模型分类，例如通过提示 “请将用户意图分类为: {列表}” 让模型给出类别，再解析其输出。
+
+为简单起见，我们在 ChatService 内部实现一个 `classifyIntent(String question)` 方法，用关键词规则返回意图类别。定义一个枚举 IntentType：
+
+```java
+// IntentType.java
+public enum IntentType {
+    QA,        // 一般问答
+    SMALL_TALK, // 闲聊
+    HANDOVER,   // 需要人工
+    OTHER       // 其他/无法确定
+}
+```
+
+ChatService 的意图识别方法：
+
+```java
+private IntentType classifyIntent(String question) {
+    String q = question.toLowerCase();
+    if (q.contains("人工") || q.contains("客服")) {
+        // 用户明确提到人工客服
+        return IntentType.HANDOVER;
+    }
+    // 简单的寒暄语检测
+    if (q.matches(".*(你好|您好|hello|hi).*")) {
+        return IntentType.SMALL_TALK;
+    }
+    // 如果包含敏感操作关键词，比如退款、密码
+    if (q.contains("退款") || q.contains("退货") || q.contains("密码")) {
+        // 这类可能涉及账号/财务，倾向于人工处理
+        return IntentType.HANDOVER;
+    }
+    // 默认归为一般问答
+    return IntentType.QA;
+}
+```
+
+上述规则非常粗糙，仅为示例。实际可根据业务需求丰富。意图识别的输出将在后续逻辑中使用：如果分类为HANDOVER，则直接走转人工流程；如果是QA或SMALL_TALK，则正常调用LLM生成答案（SMALL_TALK虽然无知识库内容，但也可以直接调用LLM）。
+
+### 多轮对话上下文管理
+
+多轮对话指用户和系统连续交互多次，后来的问题可能与之前讨论内容相关。系统需要**记住上下文**，例如用户上一问提到的主题。在LLM生成答案时，需要将过去对话作为 prompt 的一部分。
+
+**实现思路**：维护每个用户（或每个会话）的对话历史消息列表。每次用户提问时，将历史消息一并发送给LLM，使其结合上下文理解新问题。
+
+由于HTTP请求是无状态的，我们需要自行保存上下文。可以利用Redis缓存，以用户ID或会话ID为key存储消息列表。Redis非常适合这种场景，可以将消息列表以List结构存储。
+
+我们设计每条消息用ChatMessage模型表示，这里简单用Map或字符串也行。LLM接口需要的消息格式通常是 `{"role": "...", "content": "..."}`。DeepSeek/OpenAI API要求role为`user`或`assistant`或`system`。我们的上下文会包含用户的问题(`user`角色)和AI的回答(`assistant`角色)，有时也会有系统消息（例如系统给模型的指示）。
+
+**ChatMessage模型**（可用简单记录代替，这里直接用Map构建JSON时再指定角色和内容，也可以创建ChatMessage类）:
+
+```java
+// 为简化演示，这里不新增ChatMessage类，直接使用一个内部帮助方法构造消息Map:
+private Map<String, String> createMessage(String role, String content) {
+    Map<String, String> msg = new HashMap<>();
+    msg.put("role", role);
+    msg.put("content", content);
+    return msg;
+}
+```
+
+**Redis缓存对话**：在Spring Boot中，可以使用 `StringRedisTemplate` 或 `RedisTemplate<String, Object>` 进行操作。为了简单，我们可以存储JSON字符串或者使用Redis的List结构直接push/pop消息字符串。
+
+ChatService中注入 RedisTemplate 并实现上下文的保存与获取：
+
+```java
+@Autowired
+private StringRedisTemplate stringRedisTemplate;
+
+private String conversationKey(Long userId) {
+    return "chat:history:" + userId;
+}
+
+// 将一条对话消息追加到用户的历史
+private void addMessageToHistory(Long userId, String role, String content) {
+    String key = conversationKey(userId);
+    // 格式: "role:content" 简单存储；更可靠的方法是存JSON字符串
+    String value = role + ":" + content;
+    stringRedisTemplate.opsForList().rightPush(key, value);
+    // 限制历史长度，避免无限增长（例如只保留最近20条消息）
+    if (stringRedisTemplate.opsForList().size(key) > 20) {
+        stringRedisTemplate.opsForList().leftPop(key); // 移除最早的一条
+    }
+}
+
+// 获取用户历史消息列表（转换为role-content对）
+private List<Map<String, String>> getHistoryMessages(Long userId) {
+    String key = conversationKey(userId);
+    List<String> values = stringRedisTemplate.opsForList().range(key, 0, -1);
+    List<Map<String, String>> messages = new ArrayList<>();
+    if (values != null) {
+        for (String val : values) {
+            int sep = val.indexOf(":");
+            if (sep != -1) {
+                String role = val.substring(0, sep);
+                String content = val.substring(sep + 1);
+                messages.add(createMessage(role, content));
+            }
+        }
+    }
+    return messages;
+}
+```
+
+**说明**：  
+- `conversationKey(userId)` 生成Redis键，例如 `"chat:history:5"` 表示用户ID=5的会话历史。  
+- `addMessageToHistory` 将新消息存入Redis List尾部。为防止历史过长，这里限制最多存20条（可根据模型上下文窗口大小调整）。旧消息用 `leftPop` 移除。  
+- `getHistoryMessages` 读取整个列表并解析成 `List<Map<String, String>>`，准备作为调用LLM接口时的消息数组。我们把每条消息存成 `"role:content"` 简单格式，取出时再拆分。更好的做法是存储为JSON或哈希，但为演示简洁，这里采用这种方式。  
+
+### LLM回答生成（LLMClient接口调用）
+
+这是系统的核心步骤。ChatService需要将整理好的提示（包括上下文、知识库信息、用户最新问题等）发送给LLM，并获取其生成的回答。
+
+如前面架构所述，我们封装了LLM的调用接口为 `LLMClient`，并有两种实现：DeepSeekClient 和 LocalLLMClient。这样可以通过配置选择使用哪种方式，而ChatService只依赖 LLMClient 接口，不关心具体调用细节。
+
+**LLMClient接口设计**：定义一个方法，输入消息列表（包含系统/用户/助手消息）返回模型的回答文本：
+
+```java
+public interface LLMClient {
+    // 给定一系列对话消息（包含最新的用户问题），调用LLM得到回答
+    String getChatCompletion(List<Map<String, String>> messages);
+}
+```
+
+DeepSeek 和 Ollama 的API都兼容 OpenAI ChatCompletion 格式 ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=The%20DeepSeek%20API%20uses%20an,to%20access%20the%20DeepSeek%20API)) ([OpenAI compatibility · Ollama Blog](https://ollama.com/blog/openai-compatibility#:~:text=To%20invoke%20Ollama%E2%80%99s%20OpenAI%20compatible,http%3A%2F%2Flocalhost%3A11434))，发送HTTP POST请求到对应服务的`/v1/chat/completions`，请求JSON类似：
+
+```json
+{
+  "model": "deepseek-chat",        // 模型名称
+  "messages": [ 
+      {"role": "system", "content": "..."},
+      {"role": "user", "content": "..."},
+      {"role": "assistant", "content": "..."},
+      ... 
+   ],
+  "stream": false
+}
+```
+
+DeepSeek需要认证头 `Authorization: Bearer YOUR_API_KEY` ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=,nodejs))。Ollama本地无需真正的API Key（但可能要求填一个占位符 ([OpenAI compatibility · Ollama Blog](https://ollama.com/blog/openai-compatibility#:~:text=client%20%3D%20OpenAI,required%2C%20but%20unused))）。两者主要区别在于base URL不同以及模型名称可能不同（DeepSeek模型名如 `"deepseek-chat"` 表示V3模型 ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=%2A%20The%20%60deepseek,chat))，本地如果运行 DeepSeek-R1 模型则可能使用 `"deepseek-reasoner"`，或者如果用其他模型例如Llama2则名称不同）。
+
+我们可以通过配置文件让用户设置：
+- `llm.mode = remote` 或 `local`
+- `llm.apiKey = <DeepSeek提供的API密钥>`
+- `llm.model = deepseek-chat` 或其他模型名
+- （本地模式下本地服务URL默认是 `http://localhost:11434/v1`，远程模式下URL是 `https://api.deepseek.com/v1`）
+
+下面给出LLMClient的两种实现示例（使用Spring的WebClient发送HTTP请求）： 
+
+```java
+package com.example.support.service;
+
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import com.fasterxml.jackson.databind.JsonNode;
+
+@Service("deepSeekClient")  // Bean名称，可用于按配置选择
+public class DeepSeekClient implements LLMClient {
+
+    private WebClient webClient;
+    @Value("${llm.apiKey}")
+    private String apiKey;
+    @Value("${llm.model:deepseek-chat}")
+    private String model;  // 默认使用DeepSeek的主聊天模型
+    
+    public DeepSeekClient(@Value("${llm.remoteUrl:https://api.deepseek.com/v1}") String remoteUrl) {
+        // 初始化WebClient，用于请求DeepSeek远程API
+        this.webClient = WebClient.create(remoteUrl);
+    }
+
+    @Override
+    public String getChatCompletion(List<Map<String, String>> messages) {
+        // 构造请求JSON
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("messages", messages);
+        requestBody.put("stream", false);
+        // 发送POST请求
+        JsonNode response = webClient.post()
+            .uri("/chat/completions")
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer " + apiKey)
+            .bodyValue(requestBody)
+            .retrieve()
+            .bodyToMono(JsonNode.class)  // 接收返回JSON
+            .block();
+        // 提取返回的答案文本
+        if (response != null && response.has("choices")) {
+            return response.get("choices").get(0).get("message").get("content").asText();
+        }
+        return null;
+    }
+}
+```
+
+```java
+package com.example.support.service;
+
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import com.fasterxml.jackson.databind.JsonNode;
+
+@Service("localLLMClient")
+public class LocalLLMClient implements LLMClient {
+
+    private WebClient webClient;
+    @Value("${llm.model:llama2}")
+    private String model;  // 本地模型名称，假设默认使用llama2或其他
+    
+    public LocalLLMClient(@Value("${llm.localUrl:http://localhost:11434/v1}") String localUrl) {
+        this.webClient = WebClient.create(localUrl);
+    }
+
+    @Override
+    public String getChatCompletion(List<Map<String, String>> messages) {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("messages", messages);
+        requestBody.put("stream", false);
+        JsonNode response = webClient.post()
+            .uri("/chat/completions")
+            .header("Content-Type", "application/json")
+            // 本地Ollama的OpenAI兼容API要求一个API-Key字段，但可填入任意值以通过格式校验
+            .header("Authorization", "Bearer ollama")
+            .bodyValue(requestBody)
+            .retrieve()
+            .bodyToMono(JsonNode.class)
+            .block();
+        if (response != null && response.has("choices")) {
+            return response.get("choices").get(0).get("message").get("content").asText();
+        }
+        return null;
+    }
+}
+```
+
+**说明**：  
+- 这里使用Spring WebFlux提供的 WebClient 进行HTTP请求。相比老的RestTemplate，WebClient支持响应式调用。我们这里调用 `.block()` 来同步等待结果，简化逻辑。  
+- DeepSeekClient：`remoteUrl` 默认指向 DeepSeek 的OpenAI兼容接口根路径 `https://api.deepseek.com/v1` ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=PARAM%20VALUE%20base_url%20,apply%20for%20an%20API%20key))（根据DeepSeek文档，这样设置后格式兼容OpenAI SDK）。设置Authorization头携带 Bearer令牌。 ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=,nodejs))DeepSeek API返回的JSON结构与OpenAI一致，包含一个choices数组，我们提取第一个choice的message内容作为答案。  
+- LocalLLMClient：`localUrl` 默认 `http://localhost:11434/v1`（Ollama默认监听地址 ([OpenAI compatibility · Ollama Blog](https://ollama.com/blog/openai-compatibility#:~:text=To%20invoke%20Ollama%E2%80%99s%20OpenAI%20compatible,http%3A%2F%2Flocalhost%3A11434))）。Authorization头填写`Bearer ollama`（Ollama本地不校验这个key值，只要格式正确即可 ([OpenAI compatibility · Ollama Blog](https://ollama.com/blog/openai-compatibility#:~:text=client%20%3D%20OpenAI,required%2C%20but%20unused))）。其他过程与远程类似。**注意**：使用本地模式前需要确保机器上已安装并启动了 Ollama 服务，并已提前加载所需模型（如运行 `ollama pull <model>` 下载模型，然后 `ollama serve` 启动本地服务）。  
+
+配置上，我们可以在application.properties中设置，例如：
+```
+# LLM设置
+llm.mode=remote        # 或 local
+llm.apiKey=sk-xxxxxx   # DeepSeek提供的API密钥
+llm.model=deepseek-chat   # 使用的模型名称
+```
+通过 Spring 的 @Value 注入，这些值会应用到上面代码中。如果 mode=remote，则应使用 DeepSeekClient Bean；mode=local 则使用 LocalLLMClient Bean。可以利用 Spring 的 @Profile 或 @Conditional 注解，使应用在不同配置下创建不同的Bean。或者更简单的方法，在ChatService中判断 mode 值，选择调用哪个实现。
+
+为直观起见，我们在 ChatService 中注入两个实现之一。例如，可以在配置文件中通过`@Qualifier`或Bean名称注入：
+
+```java
+@Autowired
+@Qualifier("#{ '${llm.mode}' == 'local' ? 'localLLMClient' : 'deepSeekClient' }")
+private LLMClient llmClient;
+```
+
+上面这个用SpEL根据配置选择Bean（假设定义的Service有name）的写法可以实现动态注入正确的LLMClient实现。或者也可以手动判断 llm.mode，然后 `@Autowired private DeepSeekClient deepSeekClient; @Autowired private LocalLLMClient localLLMClient;` 在运行时选择。但为不混乱，这里假设我们成功注入了 llmClient，无论它具体是哪种实现。
+
+### 转人工客服处理
+
+当判断需要人工介入（IntentType.HANDOVER）时，系统不应尝试生成回答，而是直接走人工流程。因为我们的系统只是提供接口提示，真正的人工客服可能是另一个系统或后台人员。
+
+**处理策略**：
+- 对于需要人工的请求，我们可以返回一个特殊的响应或消息提示，比如：“您的问题比较复杂，已为您转接人工客服，请稍候...”。同时在后台记录该会话需要人工（例如保存到数据库或发送通知给客服人员）。  
+- 提供一个接口（如`/api/chat/transfer`）可供前端调用以确认转人工操作。但其实如果我们已经自动判断了，也可以不需要前端额外操作，只要提示用户“即将转人工”。本设计中简化处理为直接给出文字提示，不真实对接客服系统。
+
+如需模拟对接，可在ChatService检测到HANDOVER时： 
+  - 保存一个标志，例如在数据库保存一个 Ticket 或 Request 对象标明 userId, question 内容, 状态=待处理。  
+  - 在返回给前端的同时，后台可以通过邮件、WebSocket通知或者管理后台界面提醒客服人员介入。
+
+考虑到项目初学者实现难度，我们主要在返回消息上给予提示，记录日志。
+
+### ChatService综合流程
+
+ChatService把上述部件串联起来。实现方法 `answerQuestion(User user, String question)`： 
+
+1. 调用意图识别得到intent类型。
+2. 如果是HANDOVER，直接返回转人工提示，并记录日志（或调用人工处理接口）。
+3. 如果不是HANDOVER：
+   - 如果是QA类型，从知识库检索相关内容；如果是SMALL_TALK则可以不检索知识（或检索也无妨，只是可能无结果）。
+   - 取出该用户之前的对话历史消息列表。
+   - 准备要发送给LLM的消息列表：可以包含一个系统消息（比如指导模型如何回答）、然后附加历史对话消息，最后附加当前用户问题消息。
+   - 系统消息可以用来提供知识库内容或设定角色。我们可以构造这样的system prompt: `"你是一位智能客服助手。以下是知识库中的相关信息：...\n请根据知识回答用户的问题。没有把握请不要编造答案。"`. 将知识库检索到的内容嵌入其中。如果没有知识信息，可设置一个通用的系统提示比如 `"你是一个乐于助人的助手。"`.
+   - 将messages列表传给LLMClient的getChatCompletion方法，获取回答文本。
+   - 保存本轮对话的用户问题和AI回答到历史（缓存）。
+   - 返回回答文本。
+
+**ChatService.answerQuestion 示例代码：**
+
+```java
+package com.example.support.service;
+
+import com.example.support.model.User;
+import com.example.support.repository.DocumentRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import java.util.*;
+
+@Service
+public class ChatService {
+
+    @Autowired
+    private KnowledgeService knowledgeService;
+    @Autowired
+    private LLMClient llmClient;
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
+    // 分类意图的方法（同前面定义，可提取为static或私有方法）
+    private IntentType classifyIntent(String question) {
+        // ...同前面代码...
+    }
+    private Map<String, String> createMessage(String role, String content) {
+        Map<String, String> msg = new HashMap<>();
+        msg.put("role", role);
+        msg.put("content", content);
+        return msg;
+    }
+    private String conversationKey(Long userId) {
+        return "chat:history:" + userId;
+    }
+    private void addMessageToHistory(Long userId, String role, String content) {
+        String key = conversationKey(userId);
+        String value = role + ":" + content;
+        stringRedisTemplate.opsForList().rightPush(key, value);
+        if (stringRedisTemplate.opsForList().size(key) > 20) {
+            stringRedisTemplate.opsForList().leftPop(key);
+        }
+    }
+    private List<Map<String, String>> getHistoryMessages(Long userId) {
+        List<Map<String, String>> messages = new ArrayList<>();
+        String key = conversationKey(userId);
+        List<String> values = stringRedisTemplate.opsForList().range(key, 0, -1);
+        if (values != null) {
+            for (String val : values) {
+                int sep = val.indexOf(":");
+                if (sep != -1) {
+                    String role = val.substring(0, sep);
+                    String content = val.substring(sep + 1);
+                    messages.add(createMessage(role, content));
+                }
+            }
+        }
+        return messages;
+    }
+
+    // 核心方法：根据用户和问题返回答案
+    public String answerQuestion(User user, String question) {
+        IntentType intent = classifyIntent(question);
+        Long userId = user.getId();
+        // 1. 意图为需要人工
+        if (intent == IntentType.HANDOVER) {
+            // 记录日志或通知人工（这里简单打印，实际可持久化）
+            System.out.println("需人工介入: 用户=" + user.getUsername() + ", 问题=" + question);
+            return "抱歉，您的问题需要人工客服处理，已为您转接人工客服，请稍候。";
+        }
+        // 2. 从知识库检索相关内容（仅QA类型需要；SMALL_TALK可跳过或结果为空）
+        String knowledge = "";
+        if (intent == IntentType.QA) {
+            knowledge = knowledgeService.searchKnowledge(user, question);
+        }
+        // 3. 获取上下文历史对话
+        List<Map<String, String>> historyMessages = getHistoryMessages(userId);
+        // 4. 准备要发送给LLM的消息列表
+        List<Map<String, String>> messages = new ArrayList<>();
+        // 系统消息：提供上下文或指导。如果有知识，将其加入系统提示
+        if (!knowledge.isEmpty()) {
+            String sysContent = "你是一位智能客服。以下是知识库中的信息供参考:\n" + knowledge + 
+                                 "\n请基于以上信息回答用户的问题。若无法从中找到答案，请礼貌地告知无法解答，不要编造。";
+            messages.add(createMessage("system", sysContent));
+        } else {
+            // 没有知识时给一个通用指示
+            messages.add(createMessage("system", "你是一名智能客服助手，请尽你所能回答用户的问题。"));
+        }
+        // 添加历史对话到消息列表
+        messages.addAll(historyMessages);
+        // 添加最新用户提问
+        messages.add(createMessage("user", question));
+        // 5. 调用LLM接口获取回答
+        String answer = llmClient.getChatCompletion(messages);
+        if (answer == null) {
+            answer = "对不起，我暂时无法回答您的问题。"; // 如果API没有返回内容，给出默认回复
+        }
+        // 6. 将本轮问答加入历史记录
+        addMessageToHistory(userId, "user", question);
+        addMessageToHistory(userId, "assistant", answer);
+        return answer;
+    }
+}
+```
+
+**说明**：  
+- IntentType.HANDOVER 时，ChatService返回一个预设的提示信息，并输出日志。这里使用 `System.out.println` 模拟后台记录，实际场景可将该请求存数据库或通知管理员。  
+- 当 intent 为 QA 时，我们调用 knowledgeService.searchKnowledge 获取知识片段。如果intent是 SMALL_TALK，我们可以knowledge保持为空（让LLM自由发挥）。  
+- 准备 prompt 消息列表时：
+  - system级消息用来传递知识和规约回答风格。如果knowledge不为空，将知识内容附加在system内容里，并提醒模型依据知识回答、不要胡乱编。这样模型会优先参考提供的知识内容。  
+  - 将之前的对话历史全部附加，这样模型知道此前已经聊了什么（例如上一问的问题和答案）。  
+  - 添加当前用户问题作为最后一个 user 消息。  
+- 最后通过 `llmClient.getChatCompletion(messages)` 调用模型得到回答。如果模型未返回（比如异常），提供一个默认无法回答的答复以避免空返回。  
+- 将这一问和答追加到历史缓存中，这样后续问题就有了这次的上下文。  
+
+### ChatController 接口
+
+ChatController 提供前端调用的聊天API，例如 `POST /api/chat/ask`，前端发送用户问题，在body或参数传输，我们调用 ChatService 得到回答并返回。
+
+```java
+@RestController
+@RequestMapping("/api/chat")
+public class ChatController {
+    @Autowired
+    private ChatService chatService;
+
+    @PostMapping("/ask")
+    public ResponseEntity<String> askQuestion(@AuthenticationPrincipal User user,
+                                              @RequestBody Map<String, String> payload) {
+        if (user == null) {
+            return ResponseEntity.status(401).body("未登录");
+        }
+        String question = payload.get("question");
+        if (question == null || question.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("问题不能为空");
+        }
+        String answer = chatService.answerQuestion(user, question);
+        return ResponseEntity.ok(answer);
+    }
+}
+```
+
+**说明**：  
+- 利用 `@AuthenticationPrincipal` 拿到当前登录用户对象（需要Spring Security的SecurityContext正确设置，这由JWT过滤器保证）。  
+- 从请求体JSON中获取`question`字段，也可以用 `@RequestParam` 形式。这里假设前端发送 `{"question": "请问...?"}` 这样的JSON。  
+- 调用 `chatService.answerQuestion(user, question)` 得到回复。然后直接返回200和答案文本。  
+
+这样，前端每发送一个问题，就能得到相应回答。如果需要**长连接/流式**输出（比如逐字逐句显示），可以考虑用WebSocket或HTTP SSE方式，但那属于更高级的实现，暂不展开。
+
+### 模块关系与调用顺序
+
+1. 前端携带JWT调用 **ChatController.askQuestion**。Spring Security过滤器验证JWT，将对应User注入控制器参数。  
+2. ChatController 从请求中取出问题，调用 **ChatService.answerQuestion**。  
+3. ChatService 内部：
+   - 使用 **IntentClassifier**（内部方法）做意图判断。
+   - 如需人工则直接返回提示。否则继续：
+   - 使用 **KnowledgeService** 检索知识库得到参考内容。  
+   - 从 **Redis缓存** 获取历史对话列表。  
+   - 调用 **LLMClient** (DeepSeekClient 或 LocalLLMClient) 请求LLM模型获取回答。  
+   - 将问答对保存到 **Redis** 历史。  
+   - 返回答案文本。  
+4. ChatController 将答案返回前端。前端显示给用户。如果答案表示需要人工，则可以在UI上提示人工客服即将介入（后端同时在日志/数据库中记录了人工请求待处理）。
+
+这样，各模块相互配合实现了完整的提问应答流程：
+
+- UserController/AuthController -> UserService/UserRepository 实现用户注册登录和认证鉴权。  
+- KnowledgeController -> KnowledgeService/DocumentRepository 实现文档上传解析和知识存储检索。  
+- ChatController -> ChatService + KnowledgeService + Redis + LLMClient 实现对话和问答。  
+
+**非功能层面的考量**在实现中也有所体现：密码加密存储、JWT鉴权保证了安全；Redis缓存提升了多轮会话的性能；LLMClient封装使系统易于扩展或切换模型提供方；通过Intent识别和知识引入减少了无关对话和模型幻觉几率，提供更准确的回复。
+
+## 接口一览与调用示例
+
+为了方便前端开发，对已实现的主要API接口汇总如下（均为JSON通信）：
+
+- **POST /api/auth/register** ：用户注册。  
+  - 请求JSON：`{"username": "...", "password": "..."}`  
+  - 响应：200成功时返回"注册成功"，失败返回错误信息。  
+- **POST /api/auth/login** ：用户登录。  
+  - 请求参数：`username=...&password=...`（或JSON，同上代码使用@RequestParam演示简单起见）。  
+  - 响应：200成功时返回JWT字符串。例如："eyJhbGciOiJI...<snip>...”。前端应保存该token，并在后续请求头加入 `Authorization: Bearer <token>`.  
+- **POST /api/knowledge/upload** ：上传知识库文档（需登录）。  
+  - 请求：表单形式，字段`file`为要上传的文件。Content-Type: multipart/form-data。  
+  - 响应：200成功时返回"文档上传成功"，失败返回错误消息。  
+  - 功能：服务器保存文件内容到数据库。注意：前端需确保JWT已在请求头。  
+- **POST /api/chat/ask** ：提交问题获取回答（需登录）。  
+  - 请求JSON：`{"question": "用户的问题文本"}`。  
+  - 响应：200成功时返回回答文本字符串。  
+  - 功能：服务器根据用户问题返回AI生成的回答或转人工提示。如果返回例如"抱歉...转接人工客服..."字样，表示AI无法回答需人工处理。  
+
+此外，如果实现人工客服接口，可考虑：
+- **POST /api/chat/transfer** ：（可选）人工接入接口。当AI返回需要人工时，前端可以调用此接口告知后台用户确认转人工。后台可以将该对话标记为人工处理状态，以便客服接管。（本设计中AI自动返回提示且后台记录日志，暂不需要前端额外调用）
+
+## 非功能性需求落实
+
+在上述设计和实现中，我们也关注了非功能性要求：
+
+- **并发性能**：Spring Boot内置Tomcat采用多线程模型，默认能够处理并发请求。我们的ChatService和各组件大部分是无状态的（除了Redis存储状态），因此可以支持并发多用户使用。同一用户的连续请求依赖于Redis来获取上下文，也能够并发访问。Redis自身支持高并发读写。另外，通过使用异步的WebClient调用LLM API，避免阻塞过多线程。如果需要更高吞吐，可以部署多实例服务并使用负载均衡，聊天上下文通过Redis共享，用户无论连到哪台实例都能取到自己的历史，实现水平扩展。
+- **安全性**：使用Spring Security框架提供了健全的安全机制：
+  - 密码使用BCrypt哈希存储，防止数据库泄漏明文密码。
+  - 登录后使用JWT而非Session，实现无状态认证，减少服务器压力且避免CSRF。
+  - 每个请求都需携带合法JWT才能访问受保护接口，JWT通过签名验证防篡改。
+  - 控制器对输入进行了简单校验（如问题不能为空等），实际可扩展对恶意输入的过滤。数据库操作使用JPA预编译语句，避免SQL注入风险。输出对用户输入做了直接返回（可以根据需要进行HTML转义以防XSS，在我们的纯API返回文本场景下问题不大）。
+  - **敏感数据**除了密码哈希，也包括LLM API密钥等配置，这些应放在配置文件中或环境变量，不要硬编码在代码里，并确保这些配置在版本控制中受保护。生产部署时考虑使用配置中心或环境注入来管理这些密钥。
+- **配置和版本**：代码中使用的依赖如 Spring Boot 3.x、Spring Security 6.x、Spring Data JPA、Redis、WebFlux WebClient、jjwt 0.11.x、PDFBox 2.0.x 等都是较新的稳定版本，确保兼容性和功能。同时JDK选择17或以上（Java17是LTS，且Spring Boot3要求Java17+）。这些版本能够让项目正常编译运行且享有最近的性能和安全改进。
+- **日志和监控**：为了调试和维护，应该在关键操作加入日志。本设计中用`System.out.println`简单输出了一些信息（如人工转接的日志）。在实际项目中可以使用SLF4J+Logback日志框架，记录登录失败、异常错误、人工请求等重要事件。这样方便问题诊断和安全审计。
+- **模型切换和扩展**：通过LLMClient的抽象，项目可以很方便地切换LLM提供商或部署方式。例如未来想改用OpenAI的GPT-4，只需新增一个实现或修改配置的URL和apiKey，ChatService不需要改动。这种松耦合设计提高了系统灵活性。DeepSeek平台本身也在持续升级模型而保持API不变 ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=%2A%20The%20%60deepseek,chat))，因此我们的集成能较好地兼容后续升级。同时，如果考虑不同模型的能力，还可以根据intent或请求类型选择不同模型实例（比如闲聊用轻量模型，专业问答用大型模型），这些都可以通过扩展LLMClient体系实现。
+
+## 部署与运行指南
+
+本项目主要面向本地部署开发，同时也提供向生产环境部署（如Docker容器化）的思路。以下是部署运行的步骤：
+
+### 开发环境运行
+
+1. **准备环境**：确保已安装 Java JDK 17 或更高版本、Maven 3。安装MySQL数据库和Redis。建议本地MySQL和Redis都在默认端口运行，或自行在配置中修改连接信息。还需要有Internet连接以调用DeepSeek API（如果使用在线模式）。如果打算使用本地LLM，则需要安装Ollama及相应模型。
+2. **获取代码**：将项目代码导入 IntelliJ IDEA。检查 `application.properties` 配置：
+   ```properties
+   spring.datasource.url=jdbc:mysql://localhost:3306/supportdb?useSSL=false&serverTimezone=UTC
+   spring.datasource.username=root
+   spring.datasource.password=yourpassword
+   spring.jpa.hibernate.ddl-auto=update
+   spring.redis.host=localhost
+   spring.redis.port=6379
+
+   # LLM配置: 使用remote调用DeepSeek
+   llm.mode=remote
+   llm.apiKey=你的DeepSeek_API密钥
+   llm.model=deepseek-chat
+   # 如需本地LLM:
+   # llm.mode=local
+   # llm.model=deepseek-reasoner   # 假设本地已下载DeepSeek-R1模型并命名为deepseek-reasoner
+   ```
+   - 修改数据库URL、用户名、密码为你自己的MySQL配置，并创建名为`supportdb`的数据库(schema)。`ddl-auto=update`会在运行时自动创建表。  
+   - Redis主机和端口按需调整，确保Redis已启动。  
+   - 如果使用DeepSeek云服务，将llm.mode设为remote并填入申请的API密钥 ([Your First API Call | DeepSeek API Docs](https://api-docs.deepseek.com/#:~:text=PARAM%20VALUE%20base_url%20,apply%20for%20an%20API%20key))。如果没有密钥，可改用本地模式(llm.mode=local)并确保Ollama及模型就绪。  
+3. **运行后端**：在IDE中运行 `SmartCustomerServiceApplication.main()`，或者在项目目录执行：`mvn spring-boot:run`。启动成功后，控制台应出现类似“Started SmartCustomerServiceApplication...”.  
+4. **初始化数据**：项目第一次运行时，会自动创建用户和文档表。此时可以通过API进行注册。  
+5. **测试接口**：可以使用Postman或curl测试：
+   - 注册: `curl -X POST http://localhost:8080/api/auth/register -H "Content-Type: application/json" -d "{\"username\":\"user1\", \"password\":\"pass1\"}"`. 应返回 "注册成功"。  
+   - 登录: `curl -X POST "http://localhost:8080/api/auth/login?username=user1&password=pass1"`. 应返回一个长字符串 (JWT)。复制该token。  
+   - 上传文档: `curl -X POST http://localhost:8080/api/knowledge/upload -H "Authorization: Bearer <TOKEN>" -F "file=@test.pdf"`. 如果文件较大，注意增加超时时间。返回 "文档上传成功" 表示成功。  
+   - 提问: `curl -X POST http://localhost:8080/api/chat/ask -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d "{\"question\": \"你好\"}"`. AI应返回问候语回复。再次提问一个与PDF内容相关的问题，AI应参考知识库内容给出回答。  
+
+6. **前端界面**：前端可以简单制作一个HTML页面，提供：
+   - 注册/登录表单，与后台交互获取token。
+   - 一个文本输入框用于输入问题，一个区域显示聊天记录。
+   - 使用JavaScript的 `fetch` API 调用后台接口。例如：
+     ```js
+     const token = localStorage.getItem('token');
+     fetch('/api/chat/ask', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+       body: JSON.stringify({ question: userQuestion })
+     }).then(res => res.text()).then(answer => { ... });
+     ```
+     将返回的答案追加到聊天显示区域。这样就形成一个基本的网页版聊天客户端。  
+   - 由于时间有限，此处不提供完整前端代码。初学者可以参考简单的Ajax调用示例自行实现。重点是保证每次请求都带上Authorization头。

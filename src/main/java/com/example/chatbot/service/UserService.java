@@ -99,6 +99,7 @@ public class UserService {
     }
     
     /**
+     * 未用到
      * 更新用户最后登录时间
      * @param userId 用户ID
      */
@@ -113,6 +114,7 @@ public class UserService {
     }
     
     /**
+     * 未用到
      * 更新用户角色
      * @param userId 用户ID
      * @param role 新角色

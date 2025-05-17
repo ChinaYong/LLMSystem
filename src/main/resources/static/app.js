@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const historyStatus = document.getElementById('historyStatus'); // 历史对话状态显示区域
     const sessionList = document.getElementById('sessionList');     // 会话列表显示区域
     const chatHistory = document.getElementById('chatHistory');     // 历史对话显示区域
+    const modelSelector = document.getElementById('modelSelector'); // 模型选择器
     
     // 添加用户登录事件监听器，当用户登录成功时加载历史对话和文件列表
     document.addEventListener('userLoggedIn', function() {
@@ -60,6 +61,52 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();     // 阻止表单默认提交行为（页面刷新）
         uploadFile();           // 调用上传文件函数
     });
+    
+    // 如果存在模型选择器，为其添加事件监听器
+    if (modelSelector) {
+        // 从本地存储中恢复上次选择的模型设置
+        const savedMode = localStorage.getItem('chatMode');
+        if (savedMode) {
+            modelSelector.value = savedMode;
+        }
+        
+        // 当选择改变时保存设置并通知后端
+        modelSelector.addEventListener('change', function() {
+            const selectedMode = modelSelector.value;
+            localStorage.setItem('chatMode', selectedMode);
+            
+            // 检查用户是否已登录
+            if (checkUserLoginStatus()) {
+                // 发送请求到后端，更新当前会话的模型设置
+                fetch('/api/config/chat-mode', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getRequestHeaders()
+                    },
+                    body: JSON.stringify({
+                        mode: selectedMode
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('无法更新模型设置');
+                    }
+                    return response.text();
+                })
+                .then(() => {
+                    // 显示模型切换成功消息
+                    appendMessage(`已切换到${selectedMode === 'local' ? '本地' : 'DeepSeek API'}模型`, 'system');
+                })
+                .catch(error => {
+                    console.error('更新模型设置失败:', error);
+                    appendMessage('模型设置更新失败: ' + error.message, 'system');
+                });
+            } else {
+                appendMessage('请先登录后再更改模型设置', 'system');
+            }
+        });
+    }
 
     // 检查用户登录状态，但不会强制重定向
     function checkUserLoginStatus() {
@@ -332,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // 将文件添加到FormData中
         formData.append('file', file);
 
-        // 获取用户信息
+        // 获取用户信息，JSON.parse将JSON解析成JavaScript对象
         const user = JSON.parse(userJson);
         // 添加用户ID到FormData
         formData.append('userId', user.userId);

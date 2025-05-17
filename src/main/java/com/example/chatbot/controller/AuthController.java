@@ -38,7 +38,7 @@ public class AuthController {
      * @return 注册结果
      */
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody User user) {
+    public ResponseEntity<?> register(@RequestBody User user) { //@RequestBody将传过来的JSON转为User对象
         logger.info("收到注册请求: " + user.getUsername());
         try {
             User registeredUser = userService.createUser(user);
@@ -65,7 +65,8 @@ public class AuthController {
     }
 
     /**
-     * 用户登录
+     * 未用到
+     * 用户登录，实际并未使用到，而是在SecurityConfig中被接管
      * @param loginRequest 登录请求参数
      * @return 登录结果
      */
@@ -73,7 +74,7 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody Map<String, String> loginRequest) {
         String username = loginRequest.get("username");
         String password = loginRequest.get("password");
-        String role = loginRequest.get("role"); // 获取前端传入的角色参数
+        String role = loginRequest.get("role"); // 获取前端传入的角色参数，当前前端并未传入，故此为null
         
         logger.info("收到登录请求: 用户名=" + username + ", 角色=" + role);
 
@@ -164,10 +165,10 @@ public class AuthController {
         
         if (user != null) {
             Map<String, Object> response = new HashMap<>();
-        response.put("id", user.getId());
-        response.put("username", user.getUsername());
-        response.put("sessionId", user.getSessionId());
-        response.put("role", user.getRole());
+            response.put("id", user.getId());
+            response.put("username", user.getUsername());
+            response.put("sessionId", user.getSessionId());
+            response.put("role", user.getRole());
             logger.info("当前用户信息获取成功: " + username);
             return ResponseEntity.ok(response);
         } else {

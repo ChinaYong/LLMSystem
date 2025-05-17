@@ -1,6 +1,7 @@
 package com.example.chatbot.service;
 
 // 导入需要的类
+import com.example.chatbot.controller.ConfigController;  // 添加ConfigController的导入
 import com.example.chatbot.model.Chat;  // 用于存储聊天记录的模型类
 import com.example.chatbot.model.User;  // 添加User模型类的导入
 import com.example.chatbot.repository.ChatRepository;  // 用于数据库操作的仓库接口
@@ -52,6 +53,10 @@ public class ChatService {
     // IntentRecognitionService用于识别用户问题的意图
     @Autowired
     private IntentRecognitionService intentRecognitionService;
+    
+    // ConfigController用于获取当前聊天模式设置
+    @Autowired
+    private ConfigController configController;
 
     /**
      * 创建聊天记录
@@ -172,6 +177,80 @@ public class ChatService {
     }
 
     /**
+     * 获取当前的聊天模式
+     * @return 当前聊天模式，"local"或"remote"
+     */
+    private String getCurrentChatMode() {
+        // 从ConfigController获取当前聊天模式
+        Map<String, String> chatModeMap = configController.getChatMode();
+        return chatModeMap.get("mode");
+    }
+
+    /**
+     * 构建结构化的会话历史消息列表
+     * @param sessionId 会话ID
+     * @return 结构化的会话历史消息列表
+     */
+    private List<Map<String, String>> buildMessageHistory(String sessionId) {
+        List<Map<String, String>> messagesList = new ArrayList<>();
+        
+        // 获取会话状态
+        Map<String, Object> sessionState = getOrCreateSessionState(sessionId);
+        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
+        
+        // 如果历史为空，返回空列表
+        if (history.isEmpty()) {
+            return messagesList;
+        }
+        
+        // 解析历史记录，构建消息列表
+        // 历史记录格式：["Q: 用户问题1", "A: 系统回答1", "Q: 用户问题2", "A: 系统回答2", ...]
+        String currentRole = null;
+        StringBuilder currentContent = new StringBuilder();
+        
+        for (String entry : history) {
+            if (entry.startsWith("Q: ")) {
+                // 如果已经有积累的内容，先添加到消息列表
+                if (currentRole != null && currentContent.length() > 0) {
+                    Map<String, String> message = new HashMap<>();
+                    message.put("role", currentRole);
+                    message.put("content", currentContent.toString().trim());
+                    messagesList.add(message);
+                    currentContent = new StringBuilder();
+                }
+                
+                // 设置当前角色为用户，开始新的内容
+                currentRole = "user";
+                currentContent.append(entry.substring(3).trim());
+            } else if (entry.startsWith("A: ")) {
+                // 如果已经有积累的内容，先添加到消息列表
+                if (currentRole != null && currentContent.length() > 0) {
+                    Map<String, String> message = new HashMap<>();
+                    message.put("role", currentRole);
+                    message.put("content", currentContent.toString().trim());
+                    messagesList.add(message);
+                    currentContent = new StringBuilder();
+                }
+                
+                // 设置当前角色为助手，开始新的内容
+                currentRole = "assistant";
+                currentContent.append(entry.substring(3).trim());
+            }
+        }
+        
+        // 处理最后一条消息
+        if (currentRole != null && currentContent.length() > 0) {
+            Map<String, String> message = new HashMap<>();
+            message.put("role", currentRole);
+            message.put("content", currentContent.toString().trim());
+            messagesList.add(message);
+        }
+        
+        logger.info("构建结构化会话历史，共 " + messagesList.size() + " 条消息");
+        return messagesList;
+    }
+
+    /**
      * 获取问题的回答
      * @param question 用户的问题
      * @param sessionId 会话ID，用于追踪上下文，如果为null则创建新会话
@@ -197,6 +276,9 @@ public class ChatService {
             history.add("Q: " + question);
             // 更新会话状态中的历史记录
             sessionState.put("history", history);
+            
+            // 获取当前聊天模式，并存入会话状态中
+            sessionState.put("chatMode", getCurrentChatMode());
 
             // 更新会话状态 - 记录问题时间
             sessionState.put("lastActivity", LocalDateTime.now());
@@ -328,6 +410,8 @@ public class ChatService {
     private void initializeSession(String sessionId) {
         // 创建一个新的Map来存储会话状态
         Map<String, Object> state = new HashMap<>();
+        // 记录会话ID
+        state.put("sessionId", sessionId);
         // 记录会话创建时间
         state.put("createdAt", LocalDateTime.now());
         // 记录最后活动时间
@@ -338,8 +422,12 @@ public class ChatService {
         state.put("greetingCount", 0);
         // 初始化投诉计数器
         state.put("complaintCount", 0);
+        // 设置初始聊天模式
+        state.put("chatMode", getCurrentChatMode());
         // 将新创建的状态Map添加到会话状态Map中
         sessionStates.put(sessionId, state);
+        
+        logger.info("初始化新会话，ID: " + sessionId + "，聊天模式: " + state.get("chatMode"));
     }
 
     /**
@@ -558,7 +646,7 @@ public class ChatService {
         }
     }
 
-    /**
+    /**未使用，意图识别修改后的剩余下的方法
      * 处理信息查询类型的问题
      */
     private String handleInformationQuery(String question, Map<String, Object> sessionState) {
@@ -682,27 +770,102 @@ public class ChatService {
         // 1. 查询相关知识片段
         List<String> relevantSegments = embeddingService.findRelevantSegments(question, 3);
 
-        // 2. 获取历史对话作为上下文
-        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
-        String conversationContext = "";
+        // 2. 获取当前聊天模式
+        String chatMode = getCurrentChatMode();
+        String sessionMode = (String) sessionState.getOrDefault("chatMode", chatMode);
+        logger.info("当前对话状态中的聊天模式: " + sessionMode);
+        logger.info("系统配置的聊天模式: " + chatMode);
+        
+        // 确保使用最新的模式设置
+        if (!sessionMode.equals(chatMode)) {
+            logger.info("更新会话中的聊天模式从 " + sessionMode + " 到 " + chatMode);
+            sessionMode = chatMode;
+            sessionState.put("chatMode", chatMode);
+        }
+        
+        System.out.println("处理知识查询，使用模式: " + ("remote".equals(sessionMode) ? "DeepSeek API" : "本地Ollama"));
 
-        // 只取最近的3轮对话作为上下文
-        int startIndex = Math.max(0, history.size() - 6); // 3轮问答共6条记录
-        if (startIndex < history.size()) {
-            conversationContext = String.join("\n", history.subList(startIndex, history.size() - 1));  // 不包括当前问题
-            if (!conversationContext.isEmpty()) {
-                conversationContext = "对话历史：\n" + conversationContext + "\n\n";
+        // 3. 检查是否为远程模式，使用结构化消息历史处理多轮对话
+        if ("remote".equals(sessionMode)) {
+            // 获取会话ID
+            String sessionId = (String) sessionState.get("sessionId");
+            if (sessionId == null) {
+                // 如果没有会话ID（这种情况不应该发生），使用一个默认值
+                sessionId = "default-session";
             }
-        }
+            
+            logger.info("使用远程模式处理知识查询，会话ID: " + sessionId);
+            
+            // 构建结构化的消息历史
+            List<Map<String, String>> messageHistory = buildMessageHistory(sessionId);
+            
+            // 准备系统消息（如果不存在）
+            if (messageHistory.isEmpty() || !"system".equals(messageHistory.get(0).get("role"))) {
+                Map<String, String> systemMessage = new HashMap<>();
+                systemMessage.put("role", "system");
+                systemMessage.put("content", "你是一个有用的AI助手，专长于根据提供的知识库内容回答问题，避免创造不存在的信息。");
+                // 将系统消息放在消息列表开头
+                messageHistory.add(0, systemMessage);
+            }
+            
+            // 4. 如果没有找到相关知识片段附加提示信息
+            if (relevantSegments.isEmpty()) {
+                logger.info("未找到相关知识片段，使用通用对话生成回答");
+                
+                // 添加当前用户问题
+                Map<String, String> userMessage = new HashMap<>();
+                userMessage.put("role", "user");
+                userMessage.put("content", question);
+                messageHistory.add(userMessage);
+                
+                // 调用LLMService进行远程对话
+                String response = llmService.generateResponse(messageHistory);
+                return response + "\n\n\n该回复并未参考知识库内容，请注意甄别";
+            }
+            
+            // 将相关段落合并成一个上下文
+            String context = relevantSegments.stream()
+                    .map(seg -> seg.trim())
+                    .collect(Collectors.joining("\n\n"));
+            
+            // 添加当前用户问题，包含知识库上下文
+            Map<String, String> userMessage = new HashMap<>();
+            userMessage.put("role", "user");
+            userMessage.put("content", String.format(
+                "知识库内容：\n%s\n\n用户问题：%s",
+                context,
+                question
+            ));
+            messageHistory.add(userMessage);
+            
+            // 调用LLMService进行远程对话，使用结构化的消息历史
+            logger.info("使用DeepSeek API生成回答，带结构化对话历史，消息总数: " + messageHistory.size());
+            return llmService.generateResponse(messageHistory);
+        } else {
+            // 旧的本地模式逻辑，使用字符串拼接方式的对话历史
+            // 获取历史对话作为上下文
+            List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
+            String conversationContext = "";
 
-        // 3. 如果没有找到相关知识片段附加提示信息
-        if (relevantSegments.isEmpty()) {
-//            return "抱歉，我的知识库中没有与您问题相关的信息。您可以尝试换一种方式提问，或询问其他问题。";
-            return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext)
-                    + "\n\n\n该回复并未参考知识库内容，请注意甄别";
-        }
+            // 只取最近的3轮对话作为上下文
+            int startIndex = Math.max(0, history.size() - 6); // 3轮问答共6条记录
+            if (startIndex < history.size()) {
+                conversationContext = String.join("\n", history.subList(startIndex, history.size() - 1));  // 不包括当前问题
+                if (!conversationContext.isEmpty()) {
+                    conversationContext = "对话历史：\n" + conversationContext + "\n\n";
+                }
+            }
 
-        // 4. 调用 LLM 服务生成回答，加入对话历史作为上下文
-        return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext);
+            // 4. 如果没有找到相关知识片段附加提示信息
+            if (relevantSegments.isEmpty()) {
+                logger.info("未找到相关知识片段，使用通用模型生成回答");
+                return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext)
+                        + "\n\n\n该回复并未参考知识库内容，请注意甄别";
+            }
+
+            // 5. 调用 LLM 服务生成回答，加入对话历史作为上下文
+            logger.info("使用本地模型生成回答，知识片段数量: " + relevantSegments.size() + "个");
+            return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext);
+        }
     }
 }

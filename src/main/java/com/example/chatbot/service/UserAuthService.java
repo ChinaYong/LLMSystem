@@ -72,6 +72,7 @@ public class UserAuthService implements UserDetailsService {
     }
 
     /**
+     * 未用到，被UserService调用，但是登录是被SecurityConfig处理
      * 用户登录
      * @param username 用户名
      * @param password 密码
@@ -91,6 +92,7 @@ public class UserAuthService implements UserDetailsService {
     }
 
     /**
+     * 未用到，前端未实现
      * 修改密码
      * @param userId 用户ID
      * @param oldPassword 旧密码

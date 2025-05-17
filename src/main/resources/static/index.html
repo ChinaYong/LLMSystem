@@ -43,12 +43,22 @@
             background-color: #f8f8f8;
             border-bottom: 1px solid #ddd;
         }
+        .model-selector {
+            margin-left: 20px;
+            padding: 5px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
     </style>
 </head>
 <body>
 <div class="container">
     <header>
         <h1>智能客服系统</h1>
+        <select id="modelSelector" class="model-selector">
+            <option value="local">本地模型</option>
+            <option value="remote">DeepSeek API</option>
+        </select>
         <div id="userSection" class="user-info" style="display: none;">
             <span>欢迎，<strong id="username"></strong></span>
             <span id="userRole"></span>
