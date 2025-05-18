@@ -8,6 +8,7 @@ import com.example.chatbot.repository.ChatRepository;  // 用于数据库操作�
 import com.example.chatbot.repository.UserRepository;  // 添加UserRepository的导入
 import com.example.chatbot.service.IntentRecognitionService.Intent;  // 意图类型的枚举
 import org.springframework.beans.factory.annotation.Autowired;  // 自动注入依赖
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;  // 添加Authentication的导入
 import org.springframework.security.core.context.SecurityContextHolder;  // 添加SecurityContextHolder的导入
 import org.springframework.stereotype.Service;  // 标记这是一个服务类
@@ -58,6 +59,9 @@ public class ChatService {
     @Autowired
     private ConfigController configController;
 
+    @Value("${chatbot.prompt.system}")
+    private String systemPrompt;
+
     /**
      * 创建聊天记录
      * @param chat 聊天对象
@@ -92,6 +96,7 @@ public class ChatService {
     }
 
     /**
+     * 未使用
      * 更新聊天记录
      * @param id 要更新的聊天记录ID
      * @param chat 包含更新内容的聊天对象
@@ -209,7 +214,7 @@ public class ChatService {
         StringBuilder currentContent = new StringBuilder();
         
         for (String entry : history) {
-            if (entry.startsWith("Q: ")) {
+            if (entry.startsWith("用户: ")) {
                 // 如果已经有积累的内容，先添加到消息列表
                 if (currentRole != null && currentContent.length() > 0) {
                     Map<String, String> message = new HashMap<>();
@@ -222,7 +227,7 @@ public class ChatService {
                 // 设置当前角色为用户，开始新的内容
                 currentRole = "user";
                 currentContent.append(entry.substring(3).trim());
-            } else if (entry.startsWith("A: ")) {
+            } else if (entry.startsWith("助理: ")) {
                 // 如果已经有积累的内容，先添加到消息列表
                 if (currentRole != null && currentContent.length() > 0) {
                     Map<String, String> message = new HashMap<>();
@@ -273,7 +278,7 @@ public class ChatService {
             // 从会话状态中获取历史记录，如果不存在则创建新的列表
             List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
             // 添加当前问题到历史记录
-            history.add("Q: " + question);
+            history.add("用户: " + question);
             // 更新会话状态中的历史记录
             sessionState.put("history", history);
             
@@ -337,7 +342,7 @@ public class ChatService {
             }
 
             // 更新会话状态 - 记录本次回答
-            history.add("A: " + answer);
+            history.add("助理: " + answer);
 
             // 保存聊天记录到数据库
             saveChat(question, answer, sessionId);
@@ -458,286 +463,298 @@ public class ChatService {
         chatRepository.save(chat);
     }
 
-    /**
-     * 处理问候类型的问题
-     * @param question 用户问题
-     * @param sessionState 会话状态
-     * @return 生成的回答
-     */
-    private String handleGreeting(String question, Map<String, Object> sessionState) {
-        // 增加问候计数
-        int greetingCount = (int) sessionState.getOrDefault("greetingCount", 0);
-        // 更新计数值到会话状态
-        sessionState.put("greetingCount", greetingCount + 1);
-
-        // 获取当前时段
-        LocalTime now = LocalTime.now();
-        String timeOfDay;
-
-        // 根据当前时间确定是早上、下午还是晚上
-        if (now.isBefore(LocalTime.of(12, 0))) {
-            timeOfDay = "早上";
-        } else if (now.isBefore(LocalTime.of(18, 0))) {
-            timeOfDay = "下午";
-        } else {
-            timeOfDay = "晚上";
-        }
-
-        // 根据问候次数和时段生成不同的问候语
-        if (greetingCount <= 1) {
-            // 第一次问候，使用标准问候语
-            String[] greetings = {
-                    timeOfDay + "好！有什么我可以帮助你的吗？",
-                    timeOfDay + "好！很高兴为您服务。",
-                    "嗨，" + timeOfDay + "好！请问有什么我可以协助您的？"
-            };
-            // 随机选择一个问候语返回
-            return greetings[(int) (Math.random() * greetings.length)];
-        } else {
-            // 重复问候，给出不同回应
-            String[] repeatedGreetings = {
-                    "我们已经打过招呼了。有什么可以帮您的吗？",
-                    "您好！请问有什么具体问题需要解答？",
-                    "我在这里。请问有什么我能做的？"
-            };
-            // 随机选择一个重复问候回应返回
-            return repeatedGreetings[(int) (Math.random() * repeatedGreetings.length)];
-        }
-    }
-
-    /**
-     * 处理告别类型的问题
-     * @param question 用户问题
-     * @param sessionState 会话状态
-     * @return 生成的回答
-     */
-    private String handleFarewell(String question, Map<String, Object> sessionState) {
-        // 标记会话可能结束
-        sessionState.put("farewellSent", true);
-
-        // 告别语数组
-        String[] farewells = {
-                "再见！如果有其他问题，随时回来咨询。",
-                "下次见！祝您一切顺利。",
-                "再会！有需要随时找我。"
-        };
-        // 随机选择一个告别语返回
-        return farewells[(int) (Math.random() * farewells.length)];
-    }
-
-    /**
-     * 处理感谢类型的问题
-     * @param question 用户问题
-     * @param sessionState 会话状态
-     * @return 生成的回答
-     */
-    private String handleThanks(String question, Map<String, Object> sessionState) {
-        // 分析之前有没有帮助过用户
-        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
-        // 判断是否有实质性对话（至少有3轮对话）
-        boolean hasProvided = history.size() > 2;
-
-        if (hasProvided) {
-            // 如果有实质性帮助，回复更热情
-            String[] responses = {
-                    "不客气！很高兴能帮到您。",
-                    "您太客气了，这是我的荣幸。",
-                    "不用谢！如果还有其他问题，随时告诉我。"
-            };
-            // 随机选择一个回应返回
-            return responses[(int) (Math.random() * responses.length)];
-        } else {
-            // 用户可能没有得到实质性帮助就感谢
-            String[] simpleResponses = {
-                    "不用谢！有什么具体问题我可以帮您解答吗？",
-                    "很高兴能帮到您。您有什么特定问题需要咨询吗？",
-                    "不客气！请问您需要什么帮助？"
-            };
-            // 随机选择一个简单回应返回
-            return simpleResponses[(int) (Math.random() * simpleResponses.length)];
-        }
-    }
-
-    /**
-     * 处理帮助请求类型的问题
-     * @param question 用户问题
-     * @param sessionState 会话状态
-     * @return 生成的回答
-     */
-    private String handleHelp(String question, Map<String, Object> sessionState) {
-        // 返回系统功能介绍
-        return "我是一个AI助手，可以回答您的问题、提供信息和帮助解决问题。您可以：\n\n" +
-                "1. 询问任何专业知识问题\n" +
-                "2. 寻求技术支持或使用指导\n" +
-                "3. 提供反馈或建议\n" +
-                "4. 提交投诉或问题报告\n\n" +
-                "请告诉我您具体需要什么帮助，我会尽力提供准确的回答。";
-    }
-
-    /**
-     * 处理澄清请求类型的问题
-     * @param question 用户问题
-     * @param sessionState 会话状态
-     * @return 生成的回答
-     */
-    private String handleClarification(String question, Map<String, Object> sessionState) {
-        // 尝试查找上一次的回答以提供澄清
-        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
-        String lastAnswer = "";
-        
-        // 从历史记录末尾向前查找，找到最近的一条系统回答
-        for (int i = history.size() - 1; i >= 0; i--) {
-            String entry = history.get(i);
-            if (entry.startsWith("A: ")) {
-                // 去掉 "A: " 前缀，获取实际回答内容
-                lastAnswer = entry.substring(3);
-                break;
-            }
-        }
-
-        if (!lastAnswer.isEmpty()) {
-            // 用上一次的回答作为上下文，请求LLM提供澄清
-            // 构建提示词，引导LLM提供基于上一次回答的澄清
-            String clarificationPrompt = String.format(
-                    "用户对我之前的回答请求澄清。\n" +
-                            "我的上一次回答是: %s\n" +
-                            "用户的请求是: %s\n" +
-                            "请基于我上一次的回答，提供更清晰、更详细的解释。",
-                    lastAnswer, question
-            );
-            // 调用LLM生成澄清回答
-            return llmService.generateResponse(clarificationPrompt);
-        } else {
-            // 没有前文上下文，请用户提供更多细节
-            return "抱歉，我可能无法理解您的问题。请提供更多细节，或者用不同的方式表述您的问题，我会尽力帮助您。";
-        }
-    }
-
-    /**
-     * 处理投诉类型的问题
-     * @param question 用户问题
-     * @param sessionState 会话状态
-     * @return 生成的回答
-     */
-    private String handleComplaint(String question, Map<String, Object> sessionState) {
-        // 跟踪投诉次数
-        int complaintCount = (int) sessionState.getOrDefault("complaintCount", 0);
-        // 更新投诉计数到会话状态
-        sessionState.put("complaintCount", complaintCount + 1);
-
-        if (complaintCount >= 2) {
-            // 多次投诉，提供转人工选项
-            return "非常抱歉您遇到了持续的问题。我们可以为您转接人工客服以获取进一步帮助。请问您希望转接人工客服吗？";
-        } else {
-            return "非常抱歉给您带来不便。我们非常重视您的反馈，会努力改进我们的服务。请详细描述您遇到的问题，以便我们能更好地帮助您解决。如果需要，我也可以为您转接人工客服。";
-        }
-    }
-
-    /**
-     * 处理反馈类型的问题
-     */
-    private String handleFeedback(String question, Map<String, Object> sessionState) {
-        // 区分积极反馈和消极反馈
-        if (question.contains("好") || question.contains("赞") || question.contains("优秀") ||
-                question.contains("good") || question.contains("great") || question.contains("excellent")) {
-            return "非常感谢您的积极评价！我们会继续努力提供优质服务。如果您有更多建议，也欢迎随时提出。";
-        } else {
-            return "感谢您的反馈！您的意见对我们非常重要，我们会认真考虑您的建议，不断改进我们的服务。如果您有更具体的建议，也请告诉我们。";
-        }
-    }
-
-    /**未使用，意图识别修改后的剩余下的方法
-     * 处理信息查询类型的问题
-     */
-    private String handleInformationQuery(String question, Map<String, Object> sessionState) {
-        // 1. 查询相关知识片段
-        List<String> relevantSegments = embeddingService.findRelevantSegments(question, 3);
-
-        // 2. 获取历史对话作为上下文
-        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
-        String conversationContext = "";
-
-        // 只取最近的3轮对话作为上下文
-        int startIndex = Math.max(0, history.size() - 6); // 3轮问答共6条记录
-        if (startIndex < history.size()) {
-            conversationContext = String.join("\n", history.subList(startIndex, history.size() - 1));  // 不包括当前问题
-            if (!conversationContext.isEmpty()) {
-                conversationContext = "对话历史：\n" + conversationContext + "\n\n";
-            }
-        }
-
-        // 3. 调用 LLM 服务生成回答，加入对话历史作为上下文
-        return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext);
-    }
-
-    /**
-     * 处理闲聊类型的问题（问候、感谢、告别等）
-     */
-    private String handleChitChat(String question, Map<String, Object> sessionState) {
-        String lowercaseQuestion = question.toLowerCase();
-        
-        // 问候处理
-        if (lowercaseQuestion.contains("你好") || lowercaseQuestion.contains("早上") || 
-                lowercaseQuestion.contains("下午") || lowercaseQuestion.contains("晚上") || 
-                lowercaseQuestion.contains("嗨") || lowercaseQuestion.contains("hi") || 
-                lowercaseQuestion.contains("hello")) {
-            return handleGreeting(question, sessionState);
-        }
-        
-        // 告别处理
-        if (lowercaseQuestion.contains("再见") || lowercaseQuestion.contains("拜拜") || 
-                lowercaseQuestion.contains("bye") || lowercaseQuestion.contains("goodbye")) {
-            return handleFarewell(question, sessionState);
-        }
-        
-        // 感谢处理
-        if (lowercaseQuestion.contains("谢谢") || lowercaseQuestion.contains("感谢") || 
-                lowercaseQuestion.contains("thanks") || lowercaseQuestion.contains("thank")) {
-            return handleThanks(question, sessionState);
-        }
-        
-        // 其他社交对话
-        String[] chitChatResponses = {
-            "我很好，谢谢关心！您有什么我可以帮助的吗？",
-            "很高兴与您交流！有什么具体问题吗？",
-            "我随时准备为您提供帮助！"
-        };
-        return chitChatResponses[(int)(Math.random() * chitChatResponses.length)];
-    }
-
-    /**
-     * 处理系统相关问题（关于机器人自身或功能）
-     */
-    private String handleSystemQuestion(String question, Map<String, Object> sessionState) {
-        String lowercaseQuestion = question.toLowerCase();
-        
-        // 关于机器人身份的问题
-        if (lowercaseQuestion.contains("你是谁") || lowercaseQuestion.contains("介绍自己") || 
-                lowercaseQuestion.contains("你叫什么") || lowercaseQuestion.contains("你的名字")) {
-            return "我是ZZY，一个AI助手，旨在提供信息和回答问题。我基于人工智能技术开发，能够理解并回答各种问题，访问知识库获取信息，并尽力为您提供有用的回答。";
-        }
-        
-        // 关于机器人功能的问题
-        if (lowercaseQuestion.contains("你能做什么") || lowercaseQuestion.contains("你的功能") || 
-                lowercaseQuestion.contains("help") || lowercaseQuestion.contains("帮助")) {
-            return handleHelp(question, sessionState);
-        }
-        
-        // 其他系统相关问题
-        return "我是ZZY，一个AI助手，可以回答您的问题、提供信息和帮助解决问题。有什么我可以帮您的吗？";
-    }
-
-    /**
-     * 处理敏感内容
-     */
-    private String handleSensitiveContent(String question, Map<String, Object> sessionState) {
-        String[] responses = {
-            "抱歉，我无法讨论这类敏感话题。有其他我可以帮助您的问题吗？",
-            "这个话题超出了我的服务范围。您可以问我一些其他问题。",
-            "作为AI助手，我被设计为不讨论敏感或有争议的话题。有其他我可以帮助您的事情吗？"
-        };
-        return responses[(int)(Math.random() * responses.length)];
-    }
+//    /**
+//     * 处理问候类型的问题
+//     * @param question 用户问题
+//     * @param sessionState 会话状态
+//     * @return 生成的回答
+//     */
+//    private String handleGreeting(String question, Map<String, Object> sessionState) {
+//        // 增加问候计数
+//        int greetingCount = (int) sessionState.getOrDefault("greetingCount", 0);
+//        // 更新计数值到会话状态
+//        sessionState.put("greetingCount", greetingCount + 1);
+//
+//        // 获取当前时段
+//        LocalTime now = LocalTime.now();
+//        String timeOfDay;
+//
+//        // 根据当前时间确定是早上、下午还是晚上
+//        if (now.isBefore(LocalTime.of(12, 0))) {
+//            timeOfDay = "早上";
+//        } else if (now.isBefore(LocalTime.of(18, 0))) {
+//            timeOfDay = "下午";
+//        } else {
+//            timeOfDay = "晚上";
+//        }
+//
+//        // 根据问候次数和时段生成不同的问候语
+//        if (greetingCount <= 1) {
+//            // 第一次问候，使用标准问候语
+//            String[] greetings = {
+//                    timeOfDay + "好！有什么我可以帮助你的吗？",
+//                    timeOfDay + "好！很高兴为您服务。",
+//                    "嗨，" + timeOfDay + "好！请问有什么我可以协助您的？"
+//            };
+//            // 随机选择一个问候语返回
+//            return greetings[(int) (Math.random() * greetings.length)];
+//        } else {
+//            // 重复问候，给出不同回应
+//            String[] repeatedGreetings = {
+//                    "我们已经打过招呼了。有什么可以帮您的吗？",
+//                    "您好！请问有什么具体问题需要解答？",
+//                    "我在这里。请问有什么我能做的？"
+//            };
+//            // 随机选择一个重复问候回应返回
+//            return repeatedGreetings[(int) (Math.random() * repeatedGreetings.length)];
+//        }
+//    }
+//
+//    /**
+//     * 处理告别类型的问题
+//     * @param question 用户问题
+//     * @param sessionState 会话状态
+//     * @return 生成的回答
+//     */
+//    private String handleFarewell(String question, Map<String, Object> sessionState) {
+//        // 标记会话可能结束
+//        sessionState.put("farewellSent", true);
+//
+//        // 告别语数组
+//        String[] farewells = {
+//                "再见！如果有其他问题，随时回来咨询。",
+//                "下次见！祝您一切顺利。",
+//                "再会！有需要随时找我。"
+//        };
+//        // 随机选择一个告别语返回
+//        return farewells[(int) (Math.random() * farewells.length)];
+//    }
+//
+//    /**
+//     * 处理感谢类型的问题
+//     * @param question 用户问题
+//     * @param sessionState 会话状态
+//     * @return 生成的回答
+//     */
+//    private String handleThanks(String question, Map<String, Object> sessionState) {
+//        // 分析之前有没有帮助过用户
+//        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
+//        // 判断是否有实质性对话（至少有3轮对话）
+//        boolean hasProvided = history.size() > 2;
+//
+//        if (hasProvided) {
+//            // 如果有实质性帮助，回复更热情
+//            String[] responses = {
+//                    "不客气！很高兴能帮到您。",
+//                    "您太客气了，这是我的荣幸。",
+//                    "不用谢！如果还有其他问题，随时告诉我。"
+//            };
+//            // 随机选择一个回应返回
+//            return responses[(int) (Math.random() * responses.length)];
+//        } else {
+//            // 用户可能没有得到实质性帮助就感谢
+//            String[] simpleResponses = {
+//                    "不用谢！有什么具体问题我可以帮您解答吗？",
+//                    "很高兴能帮到您。您有什么特定问题需要咨询吗？",
+//                    "不客气！请问您需要什么帮助？"
+//            };
+//            // 随机选择一个简单回应返回
+//            return simpleResponses[(int) (Math.random() * simpleResponses.length)];
+//        }
+//    }
+//
+//    /**
+//     * 处理帮助请求类型的问题
+//     * @param question 用户问题
+//     * @param sessionState 会话状态
+//     * @return 生成的回答
+//     */
+//    private String handleHelp(String question, Map<String, Object> sessionState) {
+//        // 返回系统功能介绍
+//        return "我是一个AI助手，可以回答您的问题、提供信息和帮助解决问题。您可以：\n\n" +
+//                "1. 询问任何专业知识问题\n" +
+//                "2. 寻求技术支持或使用指导\n" +
+//                "3. 提供反馈或建议\n" +
+//                "4. 提交投诉或问题报告\n\n" +
+//                "请告诉我您具体需要什么帮助，我会尽力提供准确的回答。";
+//    }
+//
+//    /**
+//     * 处理澄清请求类型的问题
+//     * @param question 用户问题
+//     * @param sessionState 会话状态
+//     * @return 生成的回答
+//     */
+//    private String handleClarification(String question, Map<String, Object> sessionState) {
+//        // 尝试查找上一次的回答以提供澄清
+//        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
+//        String lastAnswer = "";
+//
+//        // 从历史记录末尾向前查找，找到最近的一条系统回答
+//        for (int i = history.size() - 1; i >= 0; i--) {
+//            String entry = history.get(i);
+//            if (entry.startsWith("A: ")) {
+//                // 去掉 "A: " 前缀，获取实际回答内容
+//                lastAnswer = entry.substring(3);
+//                break;
+//            }
+//        }
+//
+//        if (!lastAnswer.isEmpty()) {
+//            // 用上一次的回答作为上下文，请求LLM提供澄清
+//            // 构建提示词，引导LLM提供基于上一次回答的澄清
+//            String clarificationPrompt = String.format(
+//                    "用户对我之前的回答请求澄清。\n" +
+//                            "我的上一次回答是: %s\n" +
+//                            "用户的请求是: %s\n" +
+//                            "请基于我上一次的回答，提供更清晰、更详细的解释。",
+//                    lastAnswer, question
+//            );
+//            // 调用LLM生成澄清回答
+//            return llmService.generateResponse(clarificationPrompt);
+//        } else {
+//            // 没有前文上下文，请用户提供更多细节
+//            return "抱歉，我可能无法理解您的问题。请提供更多细节，或者用不同的方式表述您的问题，我会尽力帮助您。";
+//        }
+//    }
+//
+//    /**
+//     * 处理投诉类型的问题
+//     * @param question 用户问题
+//     * @param sessionState 会话状态
+//     * @return 生成的回答
+//     */
+//    private String handleComplaint(String question, Map<String, Object> sessionState) {
+//        // 跟踪投诉次数
+//        int complaintCount = (int) sessionState.getOrDefault("complaintCount", 0);
+//        // 更新投诉计数到会话状态
+//        sessionState.put("complaintCount", complaintCount + 1);
+//
+//        if (complaintCount >= 2) {
+//            // 多次投诉，提供转人工选项
+//            return "非常抱歉您遇到了持续的问题。我们可以为您转接人工客服以获取进一步帮助。请问您希望转接人工客服吗？";
+//        } else {
+//            return "非常抱歉给您带来不便。我们非常重视您的反馈，会努力改进我们的服务。请详细描述您遇到的问题，以便我们能更好地帮助您解决。如果需要，我也可以为您转接人工客服。";
+//        }
+//    }
+//
+//    /**
+//     * 处理反馈类型的问题
+//     */
+//    private String handleFeedback(String question, Map<String, Object> sessionState) {
+//        // 区分积极反馈和消极反馈
+//        if (question.contains("好") || question.contains("赞") || question.contains("优秀") ||
+//                question.contains("good") || question.contains("great") || question.contains("excellent")) {
+//            return "非常感谢您的积极评价！我们会继续努力提供优质服务。如果您有更多建议，也欢迎随时提出。";
+//        } else {
+//            return "感谢您的反馈！您的意见对我们非常重要，我们会认真考虑您的建议，不断改进我们的服务。如果您有更具体的建议，也请告诉我们。";
+//        }
+//    }
+//
+//    /**未使用，意图识别修改后的剩余下的方法
+//     * 处理信息查询类型的问题
+//     */
+//    private String handleInformationQuery(String question, Map<String, Object> sessionState) {
+//        // 1. 查询相关知识片段
+//        List<String> relevantSegments = embeddingService.findRelevantSegments(question, 3);
+//
+//        // 2. 获取历史对话作为上下文
+//        List<String> history = (List<String>) sessionState.getOrDefault("history", new ArrayList<String>());
+//        String conversationContext = "";
+//
+//        // 只取最近的3轮对话作为上下文
+//        int startIndex = Math.max(0, history.size() - 6); // 3轮问答共6条记录
+//        if (startIndex < history.size()) {
+//            conversationContext = String.join("\n", history.subList(startIndex, history.size() - 1));  // 不包括当前问题
+//            if (!conversationContext.isEmpty()) {
+//                conversationContext = "对话历史：\n" + conversationContext + "\n\n";
+//            }
+//        }
+//
+//        // 3. 调用 LLM 服务生成回答，加入对话历史作为上下文
+//        return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext);
+//    }
+//
+//    /**
+//     * 处理闲聊类型的问题（问候、感谢、告别等）
+//     */
+//    private String handleChitChat(String question, Map<String, Object> sessionState) {
+//        String lowercaseQuestion = question.toLowerCase();
+//
+//        // 问候处理
+//        if (lowercaseQuestion.contains("你好") || lowercaseQuestion.contains("早上") ||
+//                lowercaseQuestion.contains("下午") || lowercaseQuestion.contains("晚上") ||
+//                lowercaseQuestion.contains("嗨") || lowercaseQuestion.contains("hi") ||
+//                lowercaseQuestion.contains("hello")) {
+//            return handleGreeting(question, sessionState);
+//        }
+//
+//        // 告别处理
+//        if (lowercaseQuestion.contains("再见") || lowercaseQuestion.contains("拜拜") ||
+//                lowercaseQuestion.contains("bye") || lowercaseQuestion.contains("goodbye")) {
+//            return handleFarewell(question, sessionState);
+//        }
+//
+//        // 感谢处理
+//        if (lowercaseQuestion.contains("谢谢") || lowercaseQuestion.contains("感谢") ||
+//                lowercaseQuestion.contains("thanks") || lowercaseQuestion.contains("thank")) {
+//            return handleThanks(question, sessionState);
+//        }
+//
+//        // 其他社交对话
+//        String[] chitChatResponses = {
+//            "我很好，谢谢关心！您有什么我可以帮助的吗？",
+//            "很高兴与您交流！有什么具体问题吗？",
+//            "我随时准备为您提供帮助！"
+//        };
+//        return chitChatResponses[(int)(Math.random() * chitChatResponses.length)];
+//    }
+//
+//    /**
+//     * 处理系统相关问题（关于机器人自身或功能）
+//     */
+//    private String handleSystemQuestion(String question, Map<String, Object> sessionState) {
+//        String lowercaseQuestion = question.toLowerCase();
+//
+//        // 关于机器人身份的问题
+//        if (lowercaseQuestion.contains("你是谁") || lowercaseQuestion.contains("介绍自己") ||
+//                lowercaseQuestion.contains("你叫什么") || lowercaseQuestion.contains("你的名字")) {
+//            return "我是ZZY，一个AI助手，旨在提供信息和回答问题。我基于人工智能技术开发，能够理解并回答各种问题，访问知识库获取信息，并尽力为您提供有用的回答。";
+//        }
+//
+//        // 关于机器人功能的问题
+//        if (lowercaseQuestion.contains("你能做什么") || lowercaseQuestion.contains("你的功能") ||
+//                lowercaseQuestion.contains("help") || lowercaseQuestion.contains("帮助")) {
+//            return handleHelp(question, sessionState);
+//        }
+//
+//        // 其他系统相关问题
+//        return "我是ZZY，一个AI助手，可以回答您的问题、提供信息和帮助解决问题。有什么我可以帮您的吗？";
+//    }
+//
+//    /**
+//     * 处理敏感内容
+//     */
+//    private String handleSensitiveContent(String question, Map<String, Object> sessionState) {
+//        String[] responses = {
+//            "抱歉，我无法讨论这类敏感话题。有其他我可以帮助您的问题吗？",
+//            "这个话题超出了我的服务范围。您可以问我一些其他问题。",
+//            "作为AI助手，我被设计为不讨论敏感或有争议的话题。有其他我可以帮助您的事情吗？"
+//        };
+//        return responses[(int)(Math.random() * responses.length)];
+//    }
+//
+//    /**
+//     * 处理超出范围的问题
+//     */
+//    private String handleOutOfScopeQuestion(String question, Map<String, Object> sessionState) {
+//        String[] responses = {
+//            "抱歉，这个问题超出了我的能力范围。我无法提供实时数据或执行具体操作。",
+//            "作为AI助手，我无法执行这类操作。有其他我可以帮助您的问题吗？",
+//            "这超出了我的功能范围。我主要擅长回答问题和提供信息，而不能执行具体任务。"
+//        };
+//        return responses[(int)(Math.random() * responses.length)];
+//    }
 
     /**
      * 处理拒绝回复的问题
@@ -751,17 +768,7 @@ public class ChatService {
         return responses[(int)(Math.random() * responses.length)];
     }
 
-    /**
-     * 处理超出范围的问题
-     */
-    private String handleOutOfScopeQuestion(String question, Map<String, Object> sessionState) {
-        String[] responses = {
-            "抱歉，这个问题超出了我的能力范围。我无法提供实时数据或执行具体操作。",
-            "作为AI助手，我无法执行这类操作。有其他我可以帮助您的问题吗？",
-            "这超出了我的功能范围。我主要擅长回答问题和提供信息，而不能执行具体任务。"
-        };
-        return responses[(int)(Math.random() * responses.length)];
-    }
+
 
     /**
      * 处理知识型查询
@@ -803,7 +810,8 @@ public class ChatService {
             if (messageHistory.isEmpty() || !"system".equals(messageHistory.get(0).get("role"))) {
                 Map<String, String> systemMessage = new HashMap<>();
                 systemMessage.put("role", "system");
-                systemMessage.put("content", "你是一个有用的AI助手，专长于根据提供的知识库内容回答问题，避免创造不存在的信息。");
+                systemMessage.put("content", systemPrompt);
+                logger.info("添加了系统Prompt: " + systemPrompt);
                 // 将系统消息放在消息列表开头
                 messageHistory.add(0, systemMessage);
             }
@@ -817,7 +825,7 @@ public class ChatService {
                 userMessage.put("role", "user");
                 userMessage.put("content", question);
                 messageHistory.add(userMessage);
-                
+
                 // 调用LLMService进行远程对话
                 String response = llmService.generateResponse(messageHistory);
                 return response + "\n\n\n该回复并未参考知识库内容，请注意甄别";
@@ -832,10 +840,11 @@ public class ChatService {
             Map<String, String> userMessage = new HashMap<>();
             userMessage.put("role", "user");
             userMessage.put("content", String.format(
-                "知识库内容：\n%s\n\n用户问题：%s",
+                "知识库内容：\n%s\n---\n用户问题：%s",
                 context,
                 question
             ));
+            logger.info(userMessage.get("content"));
             messageHistory.add(userMessage);
             
             // 调用LLMService进行远程对话，使用结构化的消息历史
@@ -850,10 +859,11 @@ public class ChatService {
             // 只取最近的3轮对话作为上下文
             int startIndex = Math.max(0, history.size() - 6); // 3轮问答共6条记录
             if (startIndex < history.size()) {
-                conversationContext = String.join("\n", history.subList(startIndex, history.size() - 1));  // 不包括当前问题
+                conversationContext = String.join("\n---\n", history.subList(startIndex, history.size() - 1));  // 不包括当前问题
                 if (!conversationContext.isEmpty()) {
                     conversationContext = "对话历史：\n" + conversationContext + "\n\n";
                 }
+                logger.info(conversationContext);
             }
 
             // 4. 如果没有找到相关知识片段附加提示信息
@@ -865,6 +875,13 @@ public class ChatService {
 
             // 5. 调用 LLM 服务生成回答，加入对话历史作为上下文
             logger.info("使用本地模型生成回答，知识片段数量: " + relevantSegments.size() + "个");
+
+            // 打印找到的知识片段内容
+//            logger.info("找到的相关知识片段:");
+//            for (int i = 0; i < relevantSegments.size(); i++) {
+//                logger.info("片段 " + (i + 1) + ":\n" + relevantSegments.get(i));
+//            }
+
             return llmService.generateAnswerWithContext(question, relevantSegments, conversationContext);
         }
     }

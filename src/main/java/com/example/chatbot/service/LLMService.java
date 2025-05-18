@@ -51,7 +51,7 @@ public class LLMService {
     @Value("${chat.mode:local}")
     private String defaultChatMode;
     
-    @Value("${chatbot.prompt.system:你是一个有用的AI助手}")
+    @Value("${chatbot.prompt.system}")
     private String systemPrompt;
     
     @Value("${chatbot.prompt.preventHallucination:}")
@@ -88,139 +88,139 @@ public class LLMService {
         }
     }
 
-    /**
-     * 未使用，不包含历史对话逻辑
-     * 根据用户问题和相关知识片段生成回答
-     * @param question 用户问题
-     * @param relevantSegments 相关知识片段
-     * @return 生成的回答
-     */
-    public String generateAnswer(String question, List<String> relevantSegments) {
-        // 检查是否使用远程模式
-        String currentChatMode = getCurrentChatMode();
-        if ("remote".equals(currentChatMode)) {
-            System.out.println("[模式选择] 使用远程模式（DeepSeek API）");
-            // 将相关段落合并成一个上下文
-            String context = relevantSegments.isEmpty() 
-                ? "没有找到相关的知识库内容。" 
-                : relevantSegments.stream()
-                    .map(seg -> seg.trim())
-                    .collect(Collectors.joining("\n\n"));
-                    
-            // 构建消息列表
-            List<Map<String, String>> messagesList = new ArrayList<>();
-            
-            // 添加系统提示消息
-            if (!systemPrompt.isEmpty()) {
-                Map<String, String> systemMessage = new HashMap<>();
-                systemMessage.put("role", "system");
-                
-                // 在系统提示中加入必要的指令
-                String enhancedSystemPrompt = systemPrompt;
-                if (!preventHallucinationPrompt.isEmpty()) {
-                    enhancedSystemPrompt += "\n\n" + preventHallucinationPrompt;
-                }
-                if (!citationPrompt.isEmpty()) {
-                    enhancedSystemPrompt += "\n\n" + citationPrompt;
-                }
-                if (!formatInstruction.isEmpty()) {
-                    enhancedSystemPrompt += "\n\n" + formatInstruction;
-                }
-                
-                systemMessage.put("content", enhancedSystemPrompt);
-                messagesList.add(systemMessage);
-            }
-            
-            // 添加用户消息，包含知识库上下文
-            String userPrompt = String.format(
-                "知识库内容：\n%s\n\n用户问题：%s",
-                context,
-                question
-            );
-            
-            Map<String, String> userMessage = new HashMap<>();
-            userMessage.put("role", "user");
-            userMessage.put("content", userPrompt);
-            messagesList.add(userMessage);
-
-            return remoteChat(messagesList);
-        }
-        
-        // 如果Ollama服务不可用且在检查间隔内，直接返回离线回复
-        if (!shouldTryConnectingToOllama()) {
-            return getFallbackResponse(question);
-        }
-
-        try {
-            System.out.println("[模式选择] 使用本地模式（Ollama）");
-            // 将相关段落合并成一个上下文
-            String context = relevantSegments.isEmpty() 
-                ? "没有找到相关的知识库内容。" 
-                : relevantSegments.stream()
-                    .map(seg -> seg.trim())
-                    .collect(Collectors.joining("\n\n"));
-                    
-            // 构建RAG提示词
-            String fullPrompt = String.format(
-                "%s\n\n" +
-                "%s\n\n" + 
-                "%s\n\n" +
-                "%s\n\n" +
-                "知识库内容：\n%s\n\n" +
-                "用户问题：%s\n\n助手回答：",
-                systemPrompt,
-                preventHallucinationPrompt,
-                citationPrompt,
-                formatInstruction,
-                context,
-                question
-            );
-
-            logger.info("调用 LLM 生成回复，包含对话上下文，提示词长度: " + fullPrompt.length());
-
-            // 构造请求体
-            Map<String, Object> req = Map.of(
-                    "model", ollamaModel,
-                    "prompt", fullPrompt,
-                    "stream", false
-            );
-
-            // 发送请求
-            Map<String, Object> resp = ollamaClient.post()
-                    .uri("/api/generate")
-                    .bodyValue(req)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .timeout(Duration.ofSeconds(60))
-                    .block();
-
-            // 服务连接成功，更新状态
-            ollamaServiceAvailable = true;
-
-            if (resp == null) {
-                return "LLM 服务未返回有效响应";
-            }
-
-            // 提取回复文本
-            String response = (String) resp.get("response");
-            if (response != null) {
-                System.out.println("========== 使用Ollama本地模型生成回复成功 ==========");
-                return response;
-            }
-
-            return "无法解析 LLM 返回的响应格式";
-        } catch (WebClientRequestException e) {
-            // 标记服务不可用
-            ollamaServiceAvailable = false;
-            lastCheckTime = System.currentTimeMillis();
-            logger.severe("无法连接到Ollama服务: " + e.getMessage());
-            return getFallbackResponse(question);
-        } catch (Exception e) {
-            logger.severe("调用 LLM 服务失败: " + e.getMessage());
-            e.printStackTrace();
-            return "服务调用出错: " + e.getMessage();
-        }
-    }
+//    /**
+//     * 未使用，不包含历史对话逻辑
+//     * 根据用户问题和相关知识片段生成回答
+//     * @param question 用户问题
+//     * @param relevantSegments 相关知识片段
+//     * @return 生成的回答
+//     */
+//    public String generateAnswer(String question, List<String> relevantSegments) {
+//        // 检查是否使用远程模式
+//        String currentChatMode = getCurrentChatMode();
+//        if ("remote".equals(currentChatMode)) {
+//            System.out.println("[模式选择] 使用远程模式（DeepSeek API）");
+//            // 将相关段落合并成一个上下文
+//            String context = relevantSegments.isEmpty()
+//                ? "没有找到相关的知识库内容。"
+//                : relevantSegments.stream()
+//                    .map(seg -> seg.trim())
+//                    .collect(Collectors.joining("\n\n"));
+//
+//            // 构建消息列表
+//            List<Map<String, String>> messagesList = new ArrayList<>();
+//
+//            // 添加系统提示消息
+//            if (!systemPrompt.isEmpty()) {
+//                Map<String, String> systemMessage = new HashMap<>();
+//                systemMessage.put("role", "system");
+//
+//                // 在系统提示中加入必要的指令
+//                String enhancedSystemPrompt = systemPrompt;
+//                if (!preventHallucinationPrompt.isEmpty()) {
+//                    enhancedSystemPrompt += "\n\n" + preventHallucinationPrompt;
+//                }
+//                if (!citationPrompt.isEmpty()) {
+//                    enhancedSystemPrompt += "\n\n" + citationPrompt;
+//                }
+//                if (!formatInstruction.isEmpty()) {
+//                    enhancedSystemPrompt += "\n\n" + formatInstruction;
+//                }
+//
+//                systemMessage.put("content", enhancedSystemPrompt);
+//                messagesList.add(systemMessage);
+//            }
+//
+//            // 添加用户消息，包含知识库上下文
+//            String userPrompt = String.format(
+//                "知识库内容：\n%s\n\n用户问题：%s",
+//                context,
+//                question
+//            );
+//
+//            Map<String, String> userMessage = new HashMap<>();
+//            userMessage.put("role", "user");
+//            userMessage.put("content", userPrompt);
+//            messagesList.add(userMessage);
+//
+//            return remoteChat(messagesList);
+//        }
+//
+//        // 如果Ollama服务不可用且在检查间隔内，直接返回离线回复
+//        if (!shouldTryConnectingToOllama()) {
+//            return getFallbackResponse(question);
+//        }
+//
+//        try {
+//            System.out.println("[模式选择] 使用本地模式（Ollama）");
+//            // 将相关段落合并成一个上下文
+//            String context = relevantSegments.isEmpty()
+//                ? "没有找到相关的知识库内容。"
+//                : relevantSegments.stream()
+//                    .map(seg -> seg.trim())
+//                    .collect(Collectors.joining("\n\n"));
+//
+//            // 构建RAG提示词
+//            String fullPrompt = String.format(
+//                "%s\n\n" +
+//                "%s\n\n" +
+//                "%s\n\n" +
+//                "%s\n\n" +
+//                "知识库内容：\n%s\n\n" +
+//                "用户问题：%s\n\n助手回答：",
+//                systemPrompt,
+//                preventHallucinationPrompt,
+//                citationPrompt,
+//                formatInstruction,
+//                context,
+//                question
+//            );
+//
+//            logger.info("调用 LLM 生成回复，包含对话上下文，提示词长度: " + fullPrompt.length());
+//
+//            // 构造请求体
+//            Map<String, Object> req = Map.of(
+//                    "model", ollamaModel,
+//                    "prompt", fullPrompt,
+//                    "stream", false
+//            );
+//
+//            // 发送请求
+//            Map<String, Object> resp = ollamaClient.post()
+//                    .uri("/api/generate")
+//                    .bodyValue(req)
+//                    .retrieve()
+//                    .bodyToMono(Map.class)
+//                    .timeout(Duration.ofSeconds(60))
+//                    .block();
+//
+//            // 服务连接成功，更新状态
+//            ollamaServiceAvailable = true;
+//
+//            if (resp == null) {
+//                return "LLM 服务未返回有效响应";
+//            }
+//
+//            // 提取回复文本
+//            String response = (String) resp.get("response");
+//            if (response != null) {
+//                System.out.println("========== 使用Ollama本地模型生成回复成功 ==========");
+//                return response;
+//            }
+//
+//            return "无法解析 LLM 返回的响应格式";
+//        } catch (WebClientRequestException e) {
+//            // 标记服务不可用
+//            ollamaServiceAvailable = false;
+//            lastCheckTime = System.currentTimeMillis();
+//            logger.severe("无法连接到Ollama服务: " + e.getMessage());
+//            return getFallbackResponse(question);
+//        } catch (Exception e) {
+//            logger.severe("调用 LLM 服务失败: " + e.getMessage());
+//            e.printStackTrace();
+//            return "服务调用出错: " + e.getMessage();
+//        }
+//    }
 
     /**
      * 根据用户问题、相关知识片段和对话历史生成回答
@@ -230,8 +230,9 @@ public class LLMService {
      * @return 生成的回答
      */
     public String generateAnswerWithContext(String question, List<String> relevantSegments, String conversationContext) {
-        logger.info("历史消息：" + conversationContext);
-        // 检查是否使用远程模式
+        logger.info("使用generateAnswerWithContext方法生成回复");
+        logger.info(conversationContext);
+        // 检查是否使用远程模式，实际远程时不会走这个方法，所以只需要看本地逻辑
         String currentChatMode = getCurrentChatMode();
         if ("remote".equals(currentChatMode)) {
             System.out.println("[模式选择] 使用远程模式（DeepSeek API）- 带上下文");
@@ -274,7 +275,7 @@ public class LLMService {
 
                 // 尝试从对话历史文本中提取对话
                 // 这里假设对话历史的格式是"用户: xxx\n助手: xxx\n用户: xxx\n助手: xxx"
-                String[] exchanges = conversationContext.split("\n");
+                String[] exchanges = conversationContext.split("\n---\n");
                 for (String exchange : exchanges) {
                     if (exchange.startsWith("用户: ")) {
                         Map<String, String> userMessage = new HashMap<>();
@@ -327,22 +328,23 @@ public class LLMService {
             // 构建RAG提示词，加入对话历史
             String fullPrompt = String.format(
                     "%s\n\n" +
-                            "%s\n\n" +
-                            "%s\n\n" +
-                            "%s\n\n" +
+//                            "%s\n\n" +
+//                            "%s\n\n" +
+//                            "%s\n\n" +
                             "%s" + // 对话历史上下文（如果有）
-                            "知识库内容：\n%s\n\n" +
-                            "用户当前问题：%s\n\n助手回答：",
+                            "知识库内容：\n%s\n---\n" +
+                            "用户当前问题：%s\n\n",
                     systemPrompt,
-                    preventHallucinationPrompt,
-                    citationPrompt,
-                    formatInstruction,
+//                    preventHallucinationPrompt,
+//                    citationPrompt,
+//                    formatInstruction,
                     conversationContext, // 可能为空
                     context,
                     question
             );
 
             logger.info("调用 LLM 生成回复，包含对话上下文，提示词以及历史对话，总长度: " + fullPrompt.length());
+            logger.info("完整Prompt：" + fullPrompt);
 
             // 构造请求体
             Map<String, Object> req = Map.of(
@@ -369,6 +371,7 @@ public class LLMService {
 
             // 提取回复文本
             String response = (String) resp.get("response");
+            logger.info("助理回复: \n" + response);
             if (response != null) {
                 logger.info("成功获取带上下文的回复，长度: " + response.length());
                 System.out.println("========== 使用Ollama本地模型生成回复成功 ==========");
@@ -392,29 +395,29 @@ public class LLMService {
     @SuppressWarnings("unchecked")
     public String generateResponse(String userQuestion) {
         // 检查是否使用远程模式
-        String currentChatMode = getCurrentChatMode();
-        if ("remote".equals(currentChatMode)) {
-            System.out.println("[模式选择] 使用远程模式（DeepSeek API）- 简单回复");
-            
-            // 构建消息列表
-            List<Map<String, String>> messagesList = new ArrayList<>();
-            
-            // 添加系统提示消息
-            if (!systemPrompt.isEmpty()) {
-                messagesList.add(Map.of(
-                    "role", "system",
-                    "content", systemPrompt
-                ));
-            }
-            
-            // 添加用户消息
-            messagesList.add(Map.of(
-                "role", "user",
-                "content", userQuestion
-            ));
-            
-            return remoteChat(messagesList);
-        }
+//        String currentChatMode = getCurrentChatMode();
+//        if ("remote".equals(currentChatMode)) {
+//            System.out.println("[模式选择] 使用远程模式（DeepSeek API）- 简单回复");
+//
+//            // 构建消息列表
+//            List<Map<String, String>> messagesList = new ArrayList<>();
+//
+//            // 添加系统提示消息
+//            if (!systemPrompt.isEmpty()) {
+//                messagesList.add(Map.of(
+//                    "role", "system",
+//                    "content", systemPrompt
+//                ));
+//            }
+//
+//            // 添加用户消息
+//            messagesList.add(Map.of(
+//                "role", "user",
+//                "content", userQuestion
+//            ));
+//
+//            return remoteChat(messagesList);
+//        }
         
         // 如果Ollama服务不可用且在检查间隔内，直接返回离线回复
         if (!shouldTryConnectingToOllama()) {
@@ -481,6 +484,7 @@ public class LLMService {
      */
     @SuppressWarnings("unchecked")
     public String generateResponse(List<Map<String, String>> messageHistory) {
+        logger.info("使用generateResponse方法生成回复");
         // 检查是否使用远程模式
         String currentChatMode = getCurrentChatMode();
         if ("remote".equals(currentChatMode)) {
@@ -489,29 +493,30 @@ public class LLMService {
             
             // 直接使用提供的消息历史
             return remoteChat(messageHistory);
-        } else {
-            // 使用本地模式，将结构化消息转换为文本
+        }
+        else {
+            // 使用本地模式，将结构化消息转换为文本，不过当前逻辑下，调用此方法时，一定是remote模式，所以不会走这个分支。
             StringBuilder conversationText = new StringBuilder();
-            
+
             // 跳过系统消息
             int startIndex = 0;
             if (!messageHistory.isEmpty() && "system".equals(messageHistory.get(0).get("role"))) {
                 startIndex = 1;
             }
-            
+
             // 构建对话文本
             for (int i = startIndex; i < messageHistory.size(); i++) {
                 Map<String, String> message = messageHistory.get(i);
                 String role = message.get("role");
                 String content = message.get("content");
-                
+
                 if ("user".equals(role)) {
                     conversationText.append("用户: ").append(content).append("\n");
                 } else if ("assistant".equals(role)) {
                     conversationText.append("助手: ").append(content).append("\n");
                 }
             }
-            
+
             // 获取最后一条用户消息作为当前问题
             String currentQuestion = "";
             for (int i = messageHistory.size() - 1; i >= 0; i--) {
@@ -521,14 +526,14 @@ public class LLMService {
                     break;
                 }
             }
-            
+
             // 如果找不到用户消息，返回错误
             if (currentQuestion.isEmpty()) {
                 return "错误：消息历史中没有用户问题";
             }
-            
+
             logger.info("转换为文本的对话历史：\n" + conversationText.toString());
-            
+
             // 调用Ollama API
             try {
                 // 构造请求体
@@ -622,6 +627,10 @@ public class LLMService {
      * @return 生成的回答
      */
     private String remoteChat(List<Map<String, String>> conversationHistory) {
+        logger.info("conversationHistory内容展示：");
+        for (Map<String, String> msg : conversationHistory) {
+            logger.info(String.format("[%s]: %s", msg.get("role"), msg.get("content")));
+        }
         try {
             logger.info("调用DeepSeek API，会话消息数量: " + conversationHistory.size());
             System.out.println("========== 使用DeepSeek远程API生成回复 ==========");
@@ -682,28 +691,28 @@ public class LLMService {
         }
     }
 
-    /**
-     * 使用单个提示词调用DeepSeek API（简化版，用于兼容旧代码）
-     * @param prompt 用户提示词
-     * @return 生成的回答
-     */
-    private String remoteChat(String prompt) {
-        List<Map<String, String>> messages = new ArrayList<>();
-        
-        // 添加系统提示消息
-        if (!systemPrompt.isEmpty()) {
-            messages.add(Map.of(
-                "role", "system",
-                "content", systemPrompt
-            ));
-        }
-        
-        // 添加用户消息
-        messages.add(Map.of(
-            "role", "user",
-            "content", prompt
-        ));
-        
-        return remoteChat(messages);
-    }
+//    /**
+//     * 使用单个提示词调用DeepSeek API（简化版，用于兼容旧代码）
+//     * @param prompt 用户提示词
+//     * @return 生成的回答
+//     */
+//    private String remoteChat(String prompt) {
+//        List<Map<String, String>> messages = new ArrayList<>();
+//
+//        // 添加系统提示消息
+//        if (!systemPrompt.isEmpty()) {
+//            messages.add(Map.of(
+//                "role", "system",
+//                "content", systemPrompt
+//            ));
+//        }
+//
+//        // 添加用户消息
+//        messages.add(Map.of(
+//            "role", "user",
+//            "content", prompt
+//        ));
+//
+//        return remoteChat(messages);
+//    }
 }
