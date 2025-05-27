@@ -72,7 +72,7 @@ public class IntentRecognitionService {
     private String buildIntentPrompt(String question) {
         return "你是一个意图分类器。请分析用户问题，并将其归类为以下意图之一：\n" +
                 "REFUSE：拒绝回答，用户提问涉及政治、色情等敏感话题\n" +
-                "SWITCH：用户主动提出人工客服回答或者用户情绪不好\n" +
+                "SWITCH：用户主动提出人工客服回答或者用户对回复很不满或者用户认为你很笨\n" +
                 "ACCEPT：用户正常提问或闲聊\n" +
                 "OUT_OF_SCOPE：超出你能力范围的问题，如需要实时数据、执行操作等\n\n" +
                 "用户问题：\"" + question + "\"\n\n" +
@@ -115,52 +115,52 @@ public class IntentRecognitionService {
         return Intent.REFUSE;
     }
 
-    /**
-     * 使用规则进行意图识别(备用方法)
-     * @param question 用户问题
-     * @return 识别出的意图
-     */
-    public Intent recognizeIntent(String question) {
-        // 转换为小写以便匹配
-        String lowercaseQuestion = question.toLowerCase();
-
-        // 问候词模式匹配
-        if (matchesPattern(lowercaseQuestion, "你好", "早上好", "晚上好", "下午好", "嗨", "hello", "hi", "hey")) {
-            return Intent.ACCEPT;
-        }
-
-        // 告别词模式匹配
-        if (matchesPattern(lowercaseQuestion, "再见", "拜拜", "bye", "goodbye", "see you")) {
-            return Intent.ACCEPT;
-        }
-
-        // 感谢词模式匹配
-        if (matchesPattern(lowercaseQuestion, "谢谢", "感谢", "thanks", "thank you", "thx")) {
-            return Intent.ACCEPT;
-        }
-
-        // 系统功能询问
-        if (matchesPattern(lowercaseQuestion, "你是谁", "介绍自己", "你能做什么", "你的功能", "about you", "你叫什么", "你的名字")) {
-            return Intent.ACCEPT;
-        }
-
-        if (matchesPattern(lowercaseQuestion, "习主席")){
-            return Intent.REFUSE;
-        }
-
-        // 默认为REFUSE
-        return Intent.REFUSE;
-    }
-
-    /**
-     * 辅助方法：检查文本是否包含任一模式
-     */
-    private boolean matchesPattern(String text, String... patterns) {
-        for (String pattern : patterns) {
-            if (text.contains(pattern)) {
-                return true;
-            }
-        }
-        return false;
-    }
+//    /**
+//     * 使用规则进行意图识别(备用方法)
+//     * @param question 用户问题
+//     * @return 识别出的意图
+//     */
+//    public Intent recognizeIntent(String question) {
+//        // 转换为小写以便匹配
+//        String lowercaseQuestion = question.toLowerCase();
+//
+//        // 问候词模式匹配
+//        if (matchesPattern(lowercaseQuestion, "你好", "早上好", "晚上好", "下午好", "嗨", "hello", "hi", "hey")) {
+//            return Intent.ACCEPT;
+//        }
+//
+//        // 告别词模式匹配
+//        if (matchesPattern(lowercaseQuestion, "再见", "拜拜", "bye", "goodbye", "see you")) {
+//            return Intent.ACCEPT;
+//        }
+//
+//        // 感谢词模式匹配
+//        if (matchesPattern(lowercaseQuestion, "谢谢", "感谢", "thanks", "thank you", "thx")) {
+//            return Intent.ACCEPT;
+//        }
+//
+//        // 系统功能询问
+//        if (matchesPattern(lowercaseQuestion, "你是谁", "介绍自己", "你能做什么", "你的功能", "about you", "你叫什么", "你的名字")) {
+//            return Intent.ACCEPT;
+//        }
+//
+//        if (matchesPattern(lowercaseQuestion, "习主席")){
+//            return Intent.REFUSE;
+//        }
+//
+//        // 默认为REFUSE
+//        return Intent.REFUSE;
+//    }
+//
+//    /**
+//     * 辅助方法：检查文本是否包含任一模式
+//     */
+//    private boolean matchesPattern(String text, String... patterns) {
+//        for (String pattern : patterns) {
+//            if (text.contains(pattern)) {
+//                return true;
+//            }
+//        }
+//        return false;
+//    }
 }

@@ -360,7 +360,7 @@ public class ChatService {
     }
 
     /**
-     * 为兼容现有接口，不带sessionId的重载方法
+     * 为兼容之前的接口，不带sessionId的重载方法
      * @param question 用户的问题
      * @return 生成的回答
      */

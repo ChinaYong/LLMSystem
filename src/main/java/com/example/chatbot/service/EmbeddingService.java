@@ -274,21 +274,21 @@ public class EmbeddingService {
         return (float) (dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10));
     }
 
-    /**
-     * 给定一个查询向量，返回内存中与之最相似的 Top-K 段 ID 列表
-     */
-    public List<Long> searchTopK(float[] queryVector, int k) {
-        if (queryVector == null || vectorIndex.isEmpty()) {
-            return Collections.emptyList();
-        }
-        
-        return vectorIndex.entrySet().stream()
-                .map(e -> Map.entry(e.getKey(), cosineSimilarity(queryVector, e.getValue())))
-                .sorted((e1, e2) -> Float.compare(e2.getValue(), e1.getValue()))
-                .limit(k)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-    }
+//    /**
+//     * 给定一个查询向量，返回内存中与之最相似的 Top-K 段 ID 列表
+//     */
+//    public List<Long> searchTopK(float[] queryVector, int k) {
+//        if (queryVector == null || vectorIndex.isEmpty()) {
+//            return Collections.emptyList();
+//        }
+//
+//        return vectorIndex.entrySet().stream()
+//                .map(e -> Map.entry(e.getKey(), cosineSimilarity(queryVector, e.getValue())))
+//                .sorted((e1, e2) -> Float.compare(e2.getValue(), e1.getValue()))
+//                .limit(k)
+//                .map(Map.Entry::getKey)
+//                .collect(Collectors.toList());
+//    }
 
     /**
      * 带有相似度阈值的检索方法
@@ -307,20 +307,20 @@ public class EmbeddingService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 返回带得分的检索结果
-     */
-    public List<Map.Entry<Long, Float>> searchTopKWithScores(float[] queryVector, int k) {
-        if (queryVector == null || vectorIndex.isEmpty()) {
-            return Collections.emptyList();
-        }
-        
-        return vectorIndex.entrySet().stream()
-                .map(e -> Map.entry(e.getKey(), cosineSimilarity(queryVector, e.getValue())))
-                .sorted((e1, e2) -> Float.compare(e2.getValue(), e1.getValue()))
-                .limit(k)
-                .collect(Collectors.toList());
-    }
+//    /**
+//     * 返回带得分的检索结果
+//     */
+//    public List<Map.Entry<Long, Float>> searchTopKWithScores(float[] queryVector, int k) {
+//        if (queryVector == null || vectorIndex.isEmpty()) {
+//            return Collections.emptyList();
+//        }
+//
+//        return vectorIndex.entrySet().stream()
+//                .map(e -> Map.entry(e.getKey(), cosineSimilarity(queryVector, e.getValue())))
+//                .sorted((e1, e2) -> Float.compare(e2.getValue(), e1.getValue()))
+//                .limit(k)
+//                .collect(Collectors.toList());
+//    }
 
     /**
      * 根据用户问题查找相关的知识片段
@@ -336,7 +336,6 @@ public class EmbeddingService {
             
             // 2. 找出最相似的片段ID（相似度阈值为0.7）
             List<Long> topSegmentIds = searchTopKWithThreshold(questionVector, limit, 0.7f);
-            
             if (topSegmentIds.isEmpty()) {
                 logger.info("没有找到相关的知识片段");
                 return Collections.emptyList();
@@ -344,7 +343,10 @@ public class EmbeddingService {
             
             // 3. 查询这些片段的内容
             List<Segment> segments = segmentRepository.findAllById(topSegmentIds);
-            
+            //打印出Segment内容
+            for(Segment segment : segments) {
+                logger.info("参考的片段：" + segment.getContent());
+            }
             // 4. 提取内容并返回
             return segments.stream()
                     .map(Segment::getContent)

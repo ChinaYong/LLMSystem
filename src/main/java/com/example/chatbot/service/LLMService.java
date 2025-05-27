@@ -328,16 +328,10 @@ public class LLMService {
             // 构建RAG提示词，加入对话历史
             String fullPrompt = String.format(
                     "%s\n\n" +
-//                            "%s\n\n" +
-//                            "%s\n\n" +
-//                            "%s\n\n" +
                             "%s" + // 对话历史上下文（如果有）
                             "知识库内容：\n%s\n---\n" +
                             "用户当前问题：%s\n\n",
                     systemPrompt,
-//                    preventHallucinationPrompt,
-//                    citationPrompt,
-//                    formatInstruction,
                     conversationContext, // 可能为空
                     context,
                     question
